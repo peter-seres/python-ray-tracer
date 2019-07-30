@@ -1,6 +1,12 @@
 import numpy as np
 
 
+def enum_pixel_array(array):
+    for i in range(array.shape[0]):
+        for j in range(array.shape[1]):
+            yield i, j
+
+
 def rot_matrix(u, alpha):
     """ Rotate 3D vector _p along axis _u with angle _alpha( deg!!! ) using R.dot(p) """
     """" Might be useful later."""
@@ -31,6 +37,18 @@ def rot_matrix(u, alpha):
     return R
 
 
+class Ray:
+    def __init__(self, origin, direction, j, k):
+        self.origin = origin
+        self.dir = direction
+
+        self.j = j
+        self.k = k
+
+    def __repr__(self):
+        return f'Ray with origin: {self.origin} and direction: {self.dir}'
+
+
 class Camera:
     def __init__(self, width, height, origin=np.array([0, 0, 0]), direction=np.array([1, 0, 0]), field_of_view=45):
         self.origin = origin                                        # Camera origin
@@ -42,22 +60,33 @@ class Camera:
         self.R = np.array([cam_i, cam_j, cam_z])                    # Transformation matrix from camera to global
 
         # Generate pixel locations in camera-body coordinate-frame:
-        x = 1 / np.tan(field_of_view/2)                             # Distance of pixels from camera origin
-        yy = np.linspace(-1, 1, width)                              # Distances of pixels along width
-        zz = np.linspace(-1, 1, height)                             # Distances ff pixels along height
+        self.x = 1 / np.tan(field_of_view/2)                             # Distance of pixels from camera origin
+        self.yy = np.linspace(-1, 1, width)                              # Distances of pixels along width
+        self.zz = np.linspace(-1, 1, height)                             # Distances ff pixels along height
 
-        # Loop through the pixel locations and cast ray directions:
-        self.rays = []
-        for j, y in enumerate(yy):
-            for k, z in enumerate(zz):
-                pix_loc_local = [x, y, z]
+    def cast_rays(self, sphere):
+
+        pixel_array = np.zeros(shape=(len(self.yy), len(self.zz), 3), dtype=np.uint8)
+
+        # Loop through the pixel locations and cast rays:
+        for j, y in enumerate(self.yy):
+            for k, z in enumerate(self.zz):
+                pix_loc_local = [self.x, y, z]
 
                 pix_loc_global = self.origin + np.matmul(self.R, np.transpose(pix_loc_local))
 
                 ray_direction = pix_loc_global - self.origin
                 ray_direction = ray_direction / np.linalg.norm(ray_direction)
 
-                ray = {'origin': self.origin,
-                       'direction': ray_direction}
+                ray = Ray(self.origin, ray_direction, j, k)
 
-                self.rays.append(ray)
+                color = sphere.intersect_ray(ray)
+                pixel_array[j, k] = color
+
+        return pixel_array
+
+
+
+
+
+
