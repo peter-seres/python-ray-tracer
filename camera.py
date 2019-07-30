@@ -1,4 +1,5 @@
 import numpy as np
+from sphere import Sphere
 
 
 def enum_pixel_array(array):
@@ -90,15 +91,29 @@ class Camera:
 
                 yield j, k, ray, pix_loc_global
 
-    def cast_rays(self, sphere):
-
+    def cast_rays(self, object_list):
         pixel_array = np.zeros(shape=(len(self.yy), len(self.zz), 3), dtype=np.uint8)
 
         # Loop through the pixel locations and cast rays:
         for j, k, ray, _ in self.generate_rays():
-            pixel_array[j, k] = sphere.intersect_ray(ray)
 
-        return pixel_array
+            dist = np.inf
+            closes_obj_index = 0
+            for obj_index, obj in enumerate(object_list):
+                dist_ray = obj.intersect_ray(ray)
+
+                if dist_ray < dist:
+                    dist = dist_ray
+                    closes_obj_index = obj_index
+
+            if dist == np.inf:
+                color = np.array([0, 0, 0])
+            else:
+                color = object_list[closes_obj_index].color
+
+            pixel_array[j, k] = color
+
+        return np.rot90(pixel_array)
 
 
 
