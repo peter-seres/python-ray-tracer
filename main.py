@@ -1,3 +1,5 @@
+import time
+
 from PIL import Image
 import numpy as np
 from camera import Camera
@@ -29,15 +31,18 @@ def main():
     h = 480     # image height (pixels)
 
     # The scene contains a camera and a sphere:
-    camera = Camera(w, h)
-    sphere1 = Sphere(position=[120, 0, -5], radius=4, color=[200, 100, 123])
+    camera = Camera(w, h, origin=[0, 0, 0], direction=[1, 0, 1], field_of_view=45)
+    sphere1 = Sphere(position=[50, 0, 0], radius=5, color=[255, 255, 123])
 
     # Generate pixels:
+    start = time.time()
     pixel_array = camera.cast_rays(sphere1)
+    end = time.time()
+    print(f'Ray tracing took {end-start} seconds with {500*480} rays and 1 object.')
 
     # Save the data to a png file:
     image = Image.fromarray(pixel_array)
-    image.save('result2.png')
+    image.save('look_up.png')
 
 
 if __name__ == '__main__':
