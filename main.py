@@ -11,7 +11,7 @@ def timed(f):
         start = time.time()
         result = f(*args, **kw)
         end = time.time()
-        print(f'Time test function {f.__name__}: with arguments:[{args}, {kw}]')
+        print(f'Time test function {f.__name__}')
         print(f'Duration: ', '{:10.10f}'.format(end-start))
         return result
     return wrap
@@ -66,27 +66,31 @@ class Camera:
     def create_rays(self, width, height):
 
         # Pixel locations in local coord system:
-        PIX_LOC = np.zeros(shape=(3, width, height))                                    # Allocate numpy 3D array
+        pixel_locations = np.zeros(shape=(3, width, height))                            # Allocate numpy 3D array
         yy, zz = np.mgrid[-1:1:complex(0, width), -1:1:complex(0, height)]              # Create pixel grid
         xx = np.ones(shape=yy.shape) * (1 / np.tan(np.radians(self.field_of_view)/2))   # Distance of grid from origin
-        PIX_LOC[0, :, :] = xx
-        PIX_LOC[1, :, :] = yy
-        PIX_LOC[2, :, :] = zz
+        pixel_locations[0, :, :] = xx
+        pixel_locations[1, :, :] = yy
+        pixel_locations[2, :, :] = zz
 
         # Calculate ray direction vectors:
-        RD = np.apply_along_axis(self.dir, 0, PIX_LOC)
+        ray_directions = np.apply_along_axis(self.dir, 0, pixel_locations)
 
-        return RD
+        return ray_directions
 
 
 class Scene:
     def __init__(self):
         self.objects = []
+        self.lights = []
         self.camera = Camera(field_of_view=45)
         self.background = np.array([25, 25, 25])
 
     def add_object(self, obj):
         self.objects.append(obj)
+
+    def add_light(self, light):
+        self.lights.append(light)
 
     def trace(self, ray_direction):
         ray_origin = self.camera.origin
@@ -108,8 +112,8 @@ class Scene:
         return color
 
     @timed
-    def render(self, RD):
-        result = np.apply_along_axis(self.trace, 0, RD)
+    def render(self, ray_directions):
+        result = np.apply_along_axis(self.trace, 0, ray_directions)
         return result
 
     def plot(self):
@@ -140,17 +144,17 @@ class Scene:
 
 def intersect_ray_sphere(ray_origin, ray_dir, sphere_origin, sphere_radius):
 
-    RO_SO = ray_origin - sphere_origin
+    ro_so = ray_origin - sphere_origin
 
     a = np.dot(ray_dir, ray_dir)
-    b = 2 * np.dot(ray_dir, RO_SO)
-    c = np.dot(RO_SO, RO_SO) - sphere_radius * sphere_radius
+    b = 2 * np.dot(ray_dir, ro_so)
+    c = np.dot(ro_so, ro_so) - sphere_radius * sphere_radius
 
     discriminant = b * b - 4 * a * c
 
     if discriminant >= 0:
-        distSqrt = np.sqrt(discriminant)
-        q = (-b - distSqrt) / 2.0 if b < 0 else (-b + distSqrt) / 2.0
+        disc_sqrt = np.sqrt(discriminant)
+        q = (-b - disc_sqrt) / 2.0 if b < 0 else (-b + disc_sqrt) / 2.0
         t0 = q / a
         t1 = c / q
         t0, t1 = min(t0, t1), max(t0, t1)
@@ -161,6 +165,12 @@ def intersect_ray_sphere(ray_origin, ray_dir, sphere_origin, sphere_radius):
         return np.inf
 
 
+class Light(object):
+    def __init__(self, origin, radius):
+        self.origin = origin
+        self.radius = radius
+
+
 def main(plotting=False):
     # Resolution settings:
     w = 1000
@@ -169,17 +179,22 @@ def main(plotting=False):
     # Create scene with camera:
     scene = Scene()
 
-    # Add a sphere object:
-    sphere = Sphere(origin=np.array([8, 0, 0]), radius=1.1, color=np.array([200, 85, 85]))
-    scene.add_object(sphere)
+    # Populate the scene:
+    sphere1 = Sphere(origin=np.array([8, 0, 0]), radius=1.1, color=np.array([200, 85, 85]))
+    sphere2 = Sphere(origin=np.array([11, 3, 0]), radius=0.8, color=np.array([180, 120, 85]))
+    light = Light(origin=np.array([11, 3, 0]), radius=0.5)
+
+    scene.add_object(sphere1)
+    scene.add_object(sphere2)
+    scene.add_light(light)
 
     # Calculate the ray directions
     print('Generating rays...')
-    RD = scene.camera.create_rays(w, h)
+    ray_directions = scene.camera.create_rays(w, h)
 
     # Render the image:
     print('Rendering...')
-    result = scene.render(RD)
+    result = scene.render(ray_directions)
 
     # Save the image to a .png file:
     pixel_array = np.zeros(shape=(result.shape[1], result.shape[2], 3), dtype=np.uint8)
