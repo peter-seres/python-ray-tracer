@@ -1,47 +1,71 @@
-from dataclasses import dataclass
 from PIL import Image
 from time import time
-from functools import wraps
-
 import numpy as np
 
+# "cimport" is used to import special compile-time information
+# about the numpy module (this is stored in a file numpy.pxd which is
+# currently part of the Cython distribution).
+cimport numpy as np
+from numpy cimport ndarray
 
-def timed(f):
-    @wraps(f)
-    def wrapper():
-        start = time()
-        result = f()
-        end = time()
-        print(f'Time test function {f.__name__}:')
-        print(f'Duration: ', '{:10.10f}'.format(end-start), 'seconds')
-        return result
-    return wrapper
+# We now need to fix a datatype for our arrays. I've used the variable
+# DTYPE for this, which is assigned to the usual NumPy runtime
+# type info object.
+DTYPE = np.int
+
+# "ctypedef" assigns a corresponding compile-time type to DTYPE_t. For
+# every type in the numpy module there's a corresponding compile-time
+# type with a _t-suffix.
+ctypedef np.int_t DTYPE_t
+
+cpdef float intersect_ray_sphere(np.ndarray ray_origin, np.ndarray ray_dir, np.ndarray sphere_origin, float sphere_radius):
+
+    cpdef np.ndarray RO_SO = ray_origin - sphere_origin
+
+    cpdef float a = np.dot(ray_dir, ray_dir)
+    cpdef float b = 2 * np.dot(ray_dir, RO_SO)
+    cpdef float c = np.dot(RO_SO, RO_SO) - sphere_radius * sphere_radius
+
+    cpdef float discriminant = b * b - 4 * a * c
+
+    cpdef float distSqrt, q, t0, t1, result
+
+    if discriminant >= 0:
+        distSqrt = np.sqrt(discriminant)
+        q = (-b - distSqrt) / 2.0 if b < 0 else (-b + distSqrt) / 2.0
+        t0 = q / a
+        t1 = c / q
+        t0, t1 = min(t0, t1), max(t0, t1)
+
+        if t1 >= 0:
+            result = t1 if t0 < 0 else t0
+    else:
+        result = np.inf
+
+    return result
 
 
-@dataclass
 class Sphere:
-    origin: np.ndarray
-    radius: float
-    color: np.ndarray
+    def __init__(self, origin, radius, color):
+        self.origin = origin
+        self.radius = radius
+        self.color = color
+
+    def get_color(self):
+        return self.color
 
 
-@dataclass
-class Ray:
-    origin: np.ndarray
-    dir: np.ndarray
-
-
-@dataclass
 class Camera:
-    field_of_view: float
+    def __init__(self, field_of_view):
+        self.field_of_view = field_of_view
 
-    # todo: Allow camera coordinate system to be moved and rotated
+        # todo: Allow camera coordinate system to be moved and rotated
 
-    origin: np.ndarray = np.array([0, 0, 0])
-    cam_i: np.ndarray = np.array([1, 0, 0])
-    cam_j: np.ndarray = np.array([0, -1, 0])
-    cam_k: np.ndarray = np.array([0, 0, 1])
-    R = np.array([cam_i, cam_j, cam_k])
+        self.origin = np.array([0, 0, 0])
+        self.cam_i = np.array([1, 0, 0])
+        self.cam_j = np.array([0, -1, 0])
+        self.cam_k= np.array([0, 0, 1])
+        self.R = np.array([self.cam_i, self.cam_j, self.cam_k])
 
     def enum_coordinate_system(self):
         for vec in [self.cam_i, self.cam_j, self.cam_k]:
@@ -79,6 +103,29 @@ class Camera:
 
         return RD
 
+cpdef np.ndarray trace(np.ndarray ray_direction, np.ndarray ray_origin, list objects):
+    cpdef float dist
+    cpdef int closest_obj_index
+    cpdef float dist_ray
+    cpdef np.ndarray color, color_get
+
+    dist = np.inf
+    closest_obj_index = 0
+    for obj_index, obj in enumerate(objects):
+        dist_ray = intersect_ray_sphere(ray_origin, ray_direction, obj.origin, obj.radius)
+
+        if dist_ray < dist:
+            dist = dist_ray
+            closest_obj_index = obj_index
+
+    if dist == np.inf:
+        color = np.array([0, 0, 0])
+    else:
+        color_get = objects[closest_obj_index].get_color()
+        color = np.array([color_get[0], color_get[1], color_get[2]])
+
+    return color
+
 
 class Scene:
     def __init__(self):
@@ -90,27 +137,30 @@ class Scene:
         self.objects.append(obj)
 
     def trace(self, ray_direction):
-        ray_origin = self.camera.origin
-
+        ray_origin= self.camera.origin
         dist = np.inf
-        closes_obj_index = 0
+        closest_obj_index = 0
         for obj_index, obj in enumerate(self.objects):
             dist_ray = intersect_ray_sphere(ray_origin, ray_direction, obj.origin, obj.radius)
 
             if dist_ray < dist:
                 dist = dist_ray
-                closes_obj_index = obj_index
+                closest_obj_index = obj_index
 
         if dist == np.inf:
             color = self.background
         else:
-            color = self.objects[closes_obj_index].color
+            color = self.objects[closest_obj_index].color
 
         return color
 
-    @timed
     def render(self, RD):
-        result = np.apply_along_axis(self.trace, 0, RD)
+        try:
+            result = np.apply_along_axis(trace, 0, RD, self.camera.origin, self.objects)
+        except ValueError:
+            print(self.camera.origin, self.objects)
+            print(type(self.camera.origin), self.objects)
+
         return result
 
     def plot(self):
@@ -139,29 +189,6 @@ class Scene:
         plt.show()
 
 
-def intersect_ray_sphere(ray_origin, ray_dir, sphere_origin, sphere_radius):
-
-    RO_SO = ray_origin - sphere_origin
-
-    a = np.dot(ray_dir, ray_dir)
-    b = 2 * np.dot(ray_dir, RO_SO)
-    c = np.dot(RO_SO, RO_SO) - sphere_radius * sphere_radius
-
-    discriminant = b * b - 4 * a * c
-
-    if discriminant >= 0:
-        distSqrt = np.sqrt(discriminant)
-        q = (-b - distSqrt) / 2.0 if b < 0 else (-b + distSqrt) / 2.0
-        t0 = q / a
-        t1 = c / q
-        t0, t1 = min(t0, t1), max(t0, t1)
-
-        if t1 >= 0:
-            return t1 if t0 < 0 else t0
-    else:
-        return np.inf
-
-
 def main(plotting=False):
     # Resolution settings:
     w = 1000
@@ -180,7 +207,10 @@ def main(plotting=False):
 
     # Render the image:
     print('Rendering...')
+    start = time()
     result = scene.render(RD)
+    end = time()
+    print(f'Duration: ', '{:10.10f}'.format(end-start))
 
     # Save the image to a .png file:
     pixel_array = np.zeros(shape=(result.shape[1], result.shape[2], 3), dtype=np.uint8)
