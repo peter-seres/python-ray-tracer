@@ -2,7 +2,7 @@ import numpy as np
 from PIL import Image
 import time
 from functools import wraps
-from scene_objects import Sphere
+from scene_objects import Sphere, Plane
 
 
 # def plot_3d_point(ax, point):
@@ -128,7 +128,7 @@ class Scene:
         self.ambient = 0.5
         self.objects = []
         self.light = None
-        self.camera = Camera(field_of_view=45)
+        self.camera = Camera(field_of_view=90)
         self.background = np.array([25, 25, 25])
 
     def get_intersection(self, ray_origin, ray_direction):
@@ -177,6 +177,7 @@ class Scene:
             return pixelize(color)
 
         obj, dist = intersect
+        # print(intersect)
 
         # Lighting and shading
         color += obj.color * self.ambient  # ambient light
@@ -187,13 +188,14 @@ class Scene:
         # # Vectors of interest:
         P = ray_origin + unit_vector(ray_direction) * dist       # Point of collision.
         L = unit_vector(self.light.origin - P)      # From intersection to light direction
-        N = obj.normal(P)                           # Sphere normal vector
+
+        N = obj.get_normal(P)
+
         RP = P - ray_origin                         # From ray source to intersection Ray vector
 
         # If there is a line of sight to the light source:
         if self.get_intersection(ray_origin=P, ray_direction=L) is None:
             lambert_intensity = np.dot(L, N)
-            # print(lambert_intensity)
             if lambert_intensity > 0:
                 color += obj.color * obj.k_lambert * lambert_intensity
 
@@ -209,6 +211,10 @@ class Scene:
             if random.randint(0, 50) == 0:
                 # ax.scatter(ray[0], P[1], P[2])
                 ax.quiver(P[0], P[1], P[2], N[0], N[1], N[2])
+
+        # if type(obj) is Plane:
+        #     print(color)
+
         return pixelize(color)
 
     @timed
@@ -230,6 +236,7 @@ class Scene:
             plt.show()
 
         else:
+
             result = np.apply_along_axis(self.trace, 0, ray_directions)
 
         return result
@@ -255,14 +262,19 @@ def main():
     scene = Scene()
 
     # Populate the scene:
-    sphere1 = Sphere(origin=np.array([8, 0, 0]), radius=1.0, color=np.array([236, 33, 33]),
-                     k_lambert=0.5, k_specular=0.5)
-    sphere2 = Sphere(origin=np.array([10, 2, 0]), radius=1.0, color=np.array([51, 153, 255]),
-                     k_lambert=0.5, k_specular=0.5)
-    scene.light = Light(origin=np.array([8, -2, 0]), radius=1.0, intensity=1.0)
+    sphere1 = Sphere(origin=np.array([4, 0, 0]), radius=1.0, color=np.array([236, 33, 33]),
+                     k_lambert=0.7, k_specular=0.5)
+    sphere2 = Sphere(origin=np.array([5, 1, 1]), radius=0.8, color=np.array([51, 153, 255]),
+                     k_lambert=0.7, k_specular=0.5)
+    scene.light = Light(origin=np.array([0.5, -1.5, 2.0]), radius=1.0, intensity=1.0)
+
+    plane = Plane(origin=np.array([7, 0, 0]),
+                  color=np.array([100, 100, 100]),
+                  normal=np.array([-1, 0, 1]))
 
     scene.objects.append(sphere1)
     scene.objects.append(sphere2)
+    scene.objects.append(plane)
 
     # Calculate the ray directions
     print('Generating rays...')
