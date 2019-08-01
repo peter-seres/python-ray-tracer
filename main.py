@@ -1,8 +1,34 @@
-from dataclasses import dataclass
 import numpy as np
 from PIL import Image
 import time
 from functools import wraps
+from scene_objects import Sphere
+
+
+# def plot_3d_point(ax, point):
+#     from mpl_toolkits.mplot3d import Axes3D
+#     import matplotlib.pyplot as plt
+#
+#     fig = plt.figure()
+#     ax = Axes3D(fig)
+#
+#     # Plot camera coordinate system:
+#     for x, y, z, i, j, k in scene.camera.enum_coordinate_system():
+#         ax.quiver(x, y, z, i, j, k, length=0.2)
+#
+#     # Plot spheres in the scene:
+#     for obj in scene.objects:
+#         ax.scatter(obj.origin[0], obj.origin[1], obj.origin[2], s=5)
+#
+#     # # Plot pixel locations:
+#     for corner in scene.camera.generate_corners():
+#         ax.scatter(corner[0], corner[1], corner[2], s=10)
+#
+#     ax.set_xlabel('X')
+#     ax.set_ylabel('Y')
+#     ax.set_zlabel('Z')
+#
+#     plt.show()
 
 
 def timed(f):
@@ -28,6 +54,12 @@ def angle_between(v1, v2):
     return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
 
 
+def reflect(vector, normal):
+    vector = unit_vector(vector)
+    normal = unit_vector(normal)
+    return vector - 2 * (vector * normal) * normal
+
+
 def shading(surface_color, specular, diffuse):
 
     R = (surface_color[0]/255 * diffuse + specular) * 255
@@ -43,33 +75,16 @@ def clip(intensity):
     return min(max(0, intensity), 255)
 
 
-@dataclass
-class Sphere:
-    origin: np.ndarray
-    radius: float
-    color: np.ndarray
-
-    k_diffuse_reflection: float = 0.7
-    k_specular_reflection: float = 0.5
-
-
-@dataclass
-class Ray:
-    origin: np.ndarray
-    dir: np.ndarray
-
-
-@dataclass
 class Camera:
-    field_of_view: float
+    def __init__(self, field_of_view):
 
-    # todo: Allow camera coordinate system to be moved and rotated
-
-    origin: np.ndarray = np.array([0, 0, 0])
-    cam_i: np.ndarray = np.array([1, 0, 0])
-    cam_j: np.ndarray = np.array([0, -1, 0])
-    cam_k: np.ndarray = np.array([0, 0, 1])
-    R = np.array([cam_i, cam_j, cam_k])
+        self.field_of_view = field_of_view
+        # todo: Allow camera coordinate system to be moved and rotated
+        self.origin: np.ndarray = np.array([0, 0, 0])
+        self.cam_i: np.ndarray = np.array([1, 0, 0])
+        self.cam_j: np.ndarray = np.array([0, -1, 0])
+        self.cam_k: np.ndarray = np.array([0, 0, 1])
+        self.R = np.array([self.cam_i, self.cam_j, self.cam_k])
 
     def enum_coordinate_system(self):
         for vec in [self.cam_i, self.cam_j, self.cam_k]:
@@ -87,7 +102,7 @@ class Camera:
                 yield self.origin + np.matmul(self.R, np.transpose(pix_loc_local))
 
     def dir(self, loc):
-
+        """ Calculates the ray direction for a given pixel location <loc>"""
         # todo: Right now this assumes that the camera.origin is the same as global coordinate system origin
         direction = np.matmul(self.R, np.transpose(loc))
         return direction
@@ -110,20 +125,31 @@ class Camera:
 
 class Scene:
     def __init__(self):
+        self.ambient = 0.5
         self.objects = []
         self.light = None
         self.camera = Camera(field_of_view=45)
         self.background = np.array([25, 25, 25])
 
-    def add_object(self, obj):
-        self.objects.append(obj)
+    def get_intersection(self, ray_origin, ray_direction):
 
-    def set_light(self, light):
-        self.light = light
+        """ For a given ray -> it returns the object the ray hits and the distance to that point """
 
-    def trace(self, ray_direction):
+        intersection = None
+        for obj in self.objects:
+            dist = obj.intersect_ray(ray_origin, ray_direction)
+
+            # If we get an intersection and this intersection is the closest one:
+            if dist is not None and (intersection is None or dist < intersection[1]):
+                intersection = obj, dist
+
+        return intersection
+
+    def trace(self, ray_direction, ray_origin=None, bounce=0, max_bounce=1, ax=None):
 
         """ For a given ray:
+
+        0) If this trace is called from a reflection: limit the amount of recursion that can occur:
         1) Loop through the objects within the scene and check for intersection.
         2) If there are multiple collisions take the closest one.
 
@@ -136,111 +162,77 @@ class Scene:
 
           """
 
-        ray_origin = self.camera.origin     # starting point of ray
-        t_min = np.inf                      # closest intersection distance
-        closest_idx = 0                     # index of the object with the closest intersection point
+        color = np.array([0.0, 0.0, 0.0])             # Start with darkness
 
-        for obj_index, obj in enumerate(self.objects):      # 1) Loop through the obejcts
+        if bounce > max_bounce:                 # If this is a reflected ray, make sure we don't reflect too many times
+            return pixelize(color)
 
-            t = intersect_ray_sphere(ray_origin, ray_direction, obj.origin, obj.radius)
+        if ray_origin is None:                  # If ray origin is not specified, it is coming from the camera
+            ray_origin = self.camera.origin
 
-            if t < t_min:                   # If this intersection is closer, set the t_min to t and store the index
-                t_min = t
-                closest_idx = obj_index
+        # Loop through all scene objects to check for intersections:
+        intersect = self.get_intersection(ray_origin, ray_direction)
 
-        if t_min == np.inf:                 # If there is no collision  -> the color = background and we return
-            color = self.background
-            return color
+        if intersect is None:                   # If there is no collision  -> the color = background and we return
+            return pixelize(color)
 
-        if self.light is None:              # If there is no light source: flat shading
-            color = self.objects[closest_idx].color
-            return color
+        obj, dist = intersect
 
-        obj = self.objects[closest_idx]
+        # Lighting and shading
+        color += obj.color * self.ambient  # ambient light
 
-        # Points of interest:
-        P = ray_origin + t_min * ray_direction      # Point of collision.
-        L = self.light.origin                       # Point of light source
-        R = ray_origin                              # Point of ray source
-        S = obj.origin                              # Point of sphere center
+        if self.light is None:                      # If there is no light source: dont do shading
+            return pixelize(color)
 
-        # Vectors of interest:
-        PL = L - P                                  # Light direction vector
-        N = P - obj.origin                          # Normal surface vector
-        RP = P - R                                  # Ray vector
+        # # Vectors of interest:
+        P = ray_origin + unit_vector(ray_direction) * dist       # Point of collision.
+        L = unit_vector(self.light.origin - P)      # From intersection to light direction
+        N = obj.normal(P)                           # Sphere normal vector
+        RP = P - ray_origin                         # From ray source to intersection Ray vector
 
-        # Angles:
-        theta = angle_between(N, PL)
-        alpha = angle_between(RP, PL)
+        # If there is a line of sight to the light source:
+        if self.get_intersection(ray_origin=P, ray_direction=L) is None:
+            lambert_intensity = np.dot(L, N)
+            # print(lambert_intensity)
+            if lambert_intensity > 0:
+                color += obj.color * obj.k_lambert * lambert_intensity
 
-        # Shading constants:
-        I_source = self.light.intensity
-        kd = obj.k_diffuse_reflection
-        ks = obj.k_specular_reflection
+        # Reflected light:
+        # reflect_ray_direction = reflect(ray_direction, N)
+        # reflected_light = self.trace(ray_direction=reflect_ray_direction, ray_origin=P)
+        # color += reflected_light * obj.k_specular
 
-        I_diffuse = I_source / t_min * (kd * np.cos(theta))
-        I_specular = I_source / t_min * (ks * np.sin(alpha))
-
-        # print(obj.color, I_diffuse, I_specular)
-
-        color = shading(surface_color=obj.color, diffuse=I_diffuse, specular=I_specular)
-
-        return color
+        if ax is not None:
+            # Plot with a 2% change:
+            import random
+            ax.scatter(obj.origin[0], obj.origin[1], obj.origin[2], s=50)
+            if random.randint(0, 50) == 0:
+                # ax.scatter(ray[0], P[1], P[2])
+                ax.quiver(P[0], P[1], P[2], N[0], N[1], N[2])
+        return pixelize(color)
 
     @timed
-    def render(self, ray_directions):
-        result = np.apply_along_axis(self.trace, 0, ray_directions)
+    def render(self, ray_directions, plot=False):
+
+        if plot:
+            from mpl_toolkits.mplot3d import Axes3D
+            import matplotlib.pyplot as plt
+
+            fig = plt.figure()
+            ax = Axes3D(fig)
+
+            result = np.apply_along_axis(self.trace, 0, ray_directions, ax=ax)
+
+            ax.set_xlabel('X')
+            ax.set_ylabel('Y')
+            ax.set_zlabel('Z')
+
+            plt.show()
+
+        else:
+            result = np.apply_along_axis(self.trace, 0, ray_directions)
+
         return result
-
-    def plot(self):
-        from mpl_toolkits.mplot3d import Axes3D
-        import matplotlib.pyplot as plt
-
-        fig = plt.figure()
-        ax = Axes3D(fig)
-
-        # Plot camera coordinate system:
-        for x, y, z, i, j, k in self.camera.enum_coordinate_system():
-            ax.quiver(x, y, z, i, j, k, length=0.2)
-
-        # Plot spheres in the scene:
-        for obj in self.objects:
-            ax.scatter(obj.origin[0], obj.origin[1], obj.origin[2], s=5)
-
-        # # Plot pixel locations:
-        for corner in self.camera.generate_corners():
-            ax.scatter(corner[0], corner[1], corner[2], s=10)
-
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
-
-        plt.show()
-
-
-def intersect_ray_sphere(ray_origin, ray_dir, sphere_origin, sphere_radius):
-
-    """ Returns the distance to the sphere. Returns INF if does not intersect. """
-
-    ro_so = ray_origin - sphere_origin
-
-    a = np.dot(ray_dir, ray_dir)
-    b = 2 * np.dot(ray_dir, ro_so)
-    c = np.dot(ro_so, ro_so) - sphere_radius * sphere_radius
-
-    discriminant = b * b - 4 * a * c
-
-    if discriminant >= 0:
-        disc_sqrt = np.sqrt(discriminant)
-        q = (-b - disc_sqrt) / 2.0 if b < 0 else (-b + disc_sqrt) / 2.0
-        t0 = q / a
-        t1 = c / q
-        t0, t1 = min(t0, t1), max(t0, t1)
-
-        if t1 >= 0:
-            return t1 if t0 < 0 else t0
-    else:
-        return np.inf
 
 
 class Light(object):
@@ -250,26 +242,27 @@ class Light(object):
         self.intensity = intensity
 
 
-def main(plotting=False):
+def pixelize(c):
+    return np.array([clip(color) for color in c], dtype=np.int8)
+
+
+def main():
     # Resolution settings:
-    w = 550
-    h = 550
+    w = 1000
+    h = 1000
 
     # Create scene with camera:
     scene = Scene()
 
     # Populate the scene:
-    sphere1 = Sphere(origin=np.array([8, 0, 0]), radius=1.1, color=np.array([200, 85, 85]),
-                     k_diffuse_reflection=0.5,
-                     k_specular_reflection=0.8)
-    sphere2 = Sphere(origin=np.array([11, 3, 0]), radius=0.8, color=np.array([180, 120, 85]),
-                     k_diffuse_reflection=0.7,
-                     k_specular_reflection=0.7)
-    light = Light(origin=np.array([7, -3, 2]), radius=0.5, intensity=1.2)
+    sphere1 = Sphere(origin=np.array([8, 0, 0]), radius=1.0, color=np.array([236, 33, 33]),
+                     k_lambert=0.5, k_specular=0.5)
+    sphere2 = Sphere(origin=np.array([10, 2, 0]), radius=1.0, color=np.array([51, 153, 255]),
+                     k_lambert=0.5, k_specular=0.5)
+    scene.light = Light(origin=np.array([8, -2, 0]), radius=1.0, intensity=1.0)
 
-    scene.add_object(sphere1)
-    scene.add_object(sphere2)
-    scene.set_light(light)
+    scene.objects.append(sphere1)
+    scene.objects.append(sphere2)
 
     # Calculate the ray directions
     print('Generating rays...')
@@ -284,10 +277,6 @@ def main(plotting=False):
     for RGB in range(3):
         pixel_array[:, :, RGB] = result[RGB, :, :]
     Image.fromarray(np.rot90(pixel_array)).save('output.png')
-
-    # Plot scene setup:
-    if plotting:
-        scene.plot()
 
     return 0
 
