@@ -5,8 +5,8 @@ class SceneObject(object):
     def __init__(self, origin, color, k_lambert, k_specular):
         self.origin = origin
         self.color = color
-
         self.k_lambert = k_lambert
+        self.k_specular = k_specular
 
     def intersect_ray(self, ray_origin, ray_dir):
         """ Should return the distance to the sphere. Returns None if does not intersect. """
@@ -91,3 +91,7 @@ class Sphere(SceneObject):
         N = P - self.origin
         return N / np.linalg.norm(N)
 
+
+class Light:
+    def __init__(self, origin):
+        self.origin = origin

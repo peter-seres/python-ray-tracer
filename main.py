@@ -1,78 +1,6 @@
 import numpy as np
-from PIL import Image
-import time
-from functools import wraps
-from scene_objects import Sphere, Plane
-
-
-# def plot_3d_point(ax, point):
-#     from mpl_toolkits.mplot3d import Axes3D
-#     import matplotlib.pyplot as plt
-#
-#     fig = plt.figure()
-#     ax = Axes3D(fig)
-#
-#     # Plot camera coordinate system:
-#     for x, y, z, i, j, k in scene.camera.enum_coordinate_system():
-#         ax.quiver(x, y, z, i, j, k, length=0.2)
-#
-#     # Plot spheres in the scene:
-#     for obj in scene.objects:
-#         ax.scatter(obj.origin[0], obj.origin[1], obj.origin[2], s=5)
-#
-#     # # Plot pixel locations:
-#     for corner in scene.camera.generate_corners():
-#         ax.scatter(corner[0], corner[1], corner[2], s=10)
-#
-#     ax.set_xlabel('X')
-#     ax.set_ylabel('Y')
-#     ax.set_zlabel('Z')
-#
-#     plt.show()
-
-
-def timed(f):
-    @wraps(f)
-    def wrap(*args, **kw):
-        start = time.time()
-        result = f(*args, **kw)
-        end = time.time()
-        print(f'Time test function {f.__name__}')
-        print(f'Duration: ', '{:10.10f}'.format(end-start))
-        return result
-    return wrap
-
-
-def unit_vector(vector):
-    """ Returns the unit vector of the vector.  """
-    return vector / np.linalg.norm(vector)
-
-
-def angle_between(v1, v2):
-    v1_u = unit_vector(v1)
-    v2_u = unit_vector(v2)
-    return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
-
-
-def reflect(vector, normal):
-    vector = unit_vector(vector)
-    normal = unit_vector(normal)
-    return vector - 2 * (vector * normal) * normal
-
-
-def shading(surface_color, specular, diffuse):
-
-    R = (surface_color[0]/255 * diffuse + specular) * 255
-    G = (surface_color[1]/255 * diffuse + specular) * 255
-    B = (surface_color[2]/255 * diffuse + specular) * 255
-
-    return np.array([clip(R), clip(G), clip(B)])
-
-
-def clip(intensity):
-    """ Ensure the final pixel intensities are in the range 0-255."""
-    intensity = int(round(intensity))
-    return min(max(0, intensity), 255)
+from scene_objects import Sphere, Plane, Light
+from utilities import timed, unit_vector, save_image, pixelize, reflect
 
 
 class Camera:
@@ -86,23 +14,9 @@ class Camera:
         self.cam_k: np.ndarray = np.array([0, 0, 1])
         self.R = np.array([self.cam_i, self.cam_j, self.cam_k])
 
-    def enum_coordinate_system(self):
-        for vec in [self.cam_i, self.cam_j, self.cam_k]:
-            yield self.origin[0], self.origin[1], self.origin[2], vec[0], vec[1], vec[2]
-
-    def generate_corners(self):
-        # Generate pixel locations in camera-body coordinate-frame:
-        x = 1 / np.tan(np.radians(self.field_of_view)/2)    # Distances of pixels from camera origin
-        yy = np.linspace(-1, 1, 2)                          # Distances of pixels along width
-        zz = np.linspace(-1, 1, 2)                          # Distances of pixels along height
-
-        for y in yy:
-            for z in zz:
-                pix_loc_local = [x, y, z]
-                yield self.origin + np.matmul(self.R, np.transpose(pix_loc_local))
-
-    def dir(self, loc):
+    def ray_directions(self, loc):
         """ Calculates the ray direction for a given pixel location <loc>"""
+
         # todo: Right now this assumes that the camera.origin is the same as global coordinate system origin
         direction = np.matmul(self.R, np.transpose(loc))
         return direction
@@ -118,25 +32,29 @@ class Camera:
         pixel_locations[2, :, :] = zz
 
         # Calculate ray direction vectors:
-        ray_directions = np.apply_along_axis(self.dir, 0, pixel_locations)
+        ray_directions = np.apply_along_axis(self.ray_directions, 0, pixel_locations)
 
         return ray_directions
 
 
 class Scene:
-    def __init__(self):
-        self.ambient = 0.5
+    def __init__(self, cam_fov=90, ambient_light=0.3):
+        self.ambient = ambient_light
         self.objects = []
         self.light = None
-        self.camera = Camera(field_of_view=90)
+        self.camera = Camera(field_of_view=cam_fov)
         self.background = np.array([25, 25, 25])
 
-    def get_intersection(self, ray_origin, ray_direction):
+    def get_intersection(self, ray_origin, ray_direction, reflected_obj=None):
 
         """ For a given ray -> it returns the object the ray hits and the distance to that point """
 
         intersection = None
         for obj in self.objects:
+
+            if obj == reflected_obj:
+                continue
+
             dist = obj.intersect_ray(ray_origin, ray_direction)
 
             # If we get an intersection and this intersection is the closest one:
@@ -145,7 +63,7 @@ class Scene:
 
         return intersection
 
-    def trace(self, ray_direction, ray_origin=None, bounce=0, max_bounce=1, ax=None):
+    def trace(self, ray_direction, ray_origin=None, bounce=0, max_bounce=2, reflected_obj=None):
 
         """ For a given ray:
 
@@ -155,14 +73,13 @@ class Scene:
 
         3) Find the position of the intersection point.
         4) Cast a ray from that point to the light source.
-            4a) Find if there is clear line of sight
-            4b) Find out the angles of the light vector hitting the surface.
+        4a) Find if there is clear line of sight
+        4b) Find out the angles of the light vector hitting the surface.
 
-            5) Determine the color of the ray as a function of: object color, angles, shadow
+        5) Determine the color of the ray as a function of: object color, angles, shadow
+        """
 
-          """
-
-        color = np.array([0.0, 0.0, 0.0])             # Start with darkness
+        color = np.array([0.0, 0.0, 0.0])       # Start with darkness
 
         if bounce > max_bounce:                 # If this is a reflected ray, make sure we don't reflect too many times
             return pixelize(color)
@@ -171,86 +88,41 @@ class Scene:
             ray_origin = self.camera.origin
 
         # Loop through all scene objects to check for intersections:
-        intersect = self.get_intersection(ray_origin, ray_direction)
+        intersect = self.get_intersection(ray_origin, ray_direction, reflected_obj=reflected_obj)
 
-        if intersect is None:                   # If there is no collision  -> the color = background and we return
+        if intersect is None:                   # If there is no collision  -> return
             return pixelize(color)
 
         obj, dist = intersect
-        # print(intersect)
 
         # Lighting and shading
-        color += obj.color * self.ambient  # ambient light
+        color += obj.color * self.ambient       # Ambient light
 
-        if self.light is None:                      # If there is no light source: dont do shading
+        if self.light is None:                  # If there is no light source: dont do shading
             return pixelize(color)
 
-        # # Vectors of interest:
-        P = ray_origin + unit_vector(ray_direction) * dist       # Point of collision.
-        L = unit_vector(self.light.origin - P)      # From intersection to light direction
+        # Vectors of interest:
+        P = ray_origin + unit_vector(ray_direction) * dist  # Point of collision.
+        L = unit_vector(self.light.origin - P)              # From intersection to light direction
+        N = obj.get_normal(P)                               # Normal vector at surface
+        R = unit_vector(reflect(ray_direction, N))          # Reflection direction
 
-        N = obj.get_normal(P)
-
-        RP = P - ray_origin                         # From ray source to intersection Ray vector
-
-        # If there is a line of sight to the light source:
-        if self.get_intersection(ray_origin=P, ray_direction=L) is None:
+        # If there is a line of sight to the light source, do the lambert shading:
+        if self.get_intersection(ray_origin=P, ray_direction=L, reflected_obj=obj) is None:
             lambert_intensity = np.dot(L, N)
             if lambert_intensity > 0:
                 color += obj.color * obj.k_lambert * lambert_intensity
 
         # Reflected light:
-        # reflect_ray_direction = reflect(ray_direction, N)
-        # reflected_light = self.trace(ray_direction=reflect_ray_direction, ray_origin=P)
-        # color += reflected_light * obj.k_specular
-
-        if ax is not None:
-            # Plot with a 2% change:
-            import random
-            ax.scatter(obj.origin[0], obj.origin[1], obj.origin[2], s=50)
-            if random.randint(0, 50) == 0:
-                # ax.scatter(ray[0], P[1], P[2])
-                ax.quiver(P[0], P[1], P[2], N[0], N[1], N[2])
-
-        # if type(obj) is Plane:
-        #     print(color)
+        reflected_light = self.trace(ray_direction=R, ray_origin=P, reflected_obj=obj, bounce=bounce+1)
+        color += reflected_light * obj.k_specular
 
         return pixelize(color)
 
     @timed
-    def render(self, ray_directions, plot=False):
-
-        if plot:
-            from mpl_toolkits.mplot3d import Axes3D
-            import matplotlib.pyplot as plt
-
-            fig = plt.figure()
-            ax = Axes3D(fig)
-
-            result = np.apply_along_axis(self.trace, 0, ray_directions, ax=ax)
-
-            ax.set_xlabel('X')
-            ax.set_ylabel('Y')
-            ax.set_zlabel('Z')
-
-            plt.show()
-
-        else:
-
-            result = np.apply_along_axis(self.trace, 0, ray_directions)
-
+    def render(self, ray_directions):
+        result = np.apply_along_axis(self.trace, 0, ray_directions)
         return result
-
-
-class Light(object):
-    def __init__(self, origin, radius, intensity):
-        self.origin = origin
-        self.radius = radius
-        self.intensity = intensity
-
-
-def pixelize(c):
-    return np.array([clip(color) for color in c], dtype=np.int8)
 
 
 def main():
@@ -259,22 +131,26 @@ def main():
     h = 1000
 
     # Create scene with camera:
-    scene = Scene()
+    scene = Scene(cam_fov=90)
 
     # Populate the scene:
-    sphere1 = Sphere(origin=np.array([4, 0, 0]), radius=1.0, color=np.array([236, 33, 33]),
-                     k_lambert=0.7, k_specular=0.5)
-    sphere2 = Sphere(origin=np.array([5, 1, 1]), radius=0.8, color=np.array([51, 153, 255]),
-                     k_lambert=0.7, k_specular=0.5)
-    scene.light = Light(origin=np.array([0.5, -1.5, 2.0]), radius=1.0, intensity=1.0)
+    sphere1 = Sphere(origin=np.array([2.5, -1.5, -0.3]), radius=0.7, color=np.array([236, 33, 33]),
+                     k_lambert=0.85, k_specular=0.7)
 
-    plane = Plane(origin=np.array([7, 0, 0]),
-                  color=np.array([100, 100, 100]),
-                  normal=np.array([-1, 0, 1]))
+    sphere2 = Sphere(origin=np.array([4, 0, 0]), radius=1.0, color=np.array([51, 153, 255]),
+                     k_lambert=0.85, k_specular=0.8)
 
+    sphere3 = Sphere(origin=np.array([2.5, 0.8, -0.5]), radius=0.3, color=np.array([251, 251, 51]),
+                     k_lambert=0.85, k_specular=0.7)
+
+    scene.light = Light(origin=np.array([0.0, -2.5, 0.0]))
+
+    plane = Plane(origin=np.array([5.1, 0, 0]), normal=np.array([-1, 0, 0]), k_specular=0.0, k_lambert=1.0)
+
+    scene.objects.append(plane)
     scene.objects.append(sphere1)
     scene.objects.append(sphere2)
-    scene.objects.append(plane)
+    scene.objects.append(sphere3)
 
     # Calculate the ray directions
     print('Generating rays...')
@@ -285,10 +161,7 @@ def main():
     result = scene.render(ray_directions)
 
     # Save the image to a .png file:
-    pixel_array = np.zeros(shape=(result.shape[1], result.shape[2], 3), dtype=np.uint8)
-    for RGB in range(3):
-        pixel_array[:, :, RGB] = result[RGB, :, :]
-    Image.fromarray(np.rot90(pixel_array)).save('output.png')
+    save_image(result)
 
     return 0
 
