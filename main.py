@@ -17,11 +17,40 @@ def timed(f):
     return wrap
 
 
+def unit_vector(vector):
+    """ Returns the unit vector of the vector.  """
+    return vector / np.linalg.norm(vector)
+
+
+def angle_between(v1, v2):
+    v1_u = unit_vector(v1)
+    v2_u = unit_vector(v2)
+    return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
+
+
+def shading(surface_color, specular, diffuse):
+
+    R = (surface_color[0]/255 * diffuse + specular) * 255
+    G = (surface_color[1]/255 * diffuse + specular) * 255
+    B = (surface_color[2]/255 * diffuse + specular) * 255
+
+    return np.array([clip(R), clip(G), clip(B)])
+
+
+def clip(intensity):
+    """ Ensure the final pixel intensities are in the range 0-255."""
+    intensity = int(round(intensity))
+    return min(max(0, intensity), 255)
+
+
 @dataclass
 class Sphere:
     origin: np.ndarray
     radius: float
     color: np.ndarray
+
+    k_diffuse_reflection: float = 0.7
+    k_specular_reflection: float = 0.5
 
 
 @dataclass
@@ -82,32 +111,79 @@ class Camera:
 class Scene:
     def __init__(self):
         self.objects = []
-        self.lights = []
+        self.light = None
         self.camera = Camera(field_of_view=45)
         self.background = np.array([25, 25, 25])
 
     def add_object(self, obj):
         self.objects.append(obj)
 
-    def add_light(self, light):
-        self.lights.append(light)
+    def set_light(self, light):
+        self.light = light
 
     def trace(self, ray_direction):
-        ray_origin = self.camera.origin
 
-        dist = np.inf
-        closes_obj_index = 0
-        for obj_index, obj in enumerate(self.objects):
-            dist_ray = intersect_ray_sphere(ray_origin, ray_direction, obj.origin, obj.radius)
+        """ For a given ray:
+        1) Loop through the objects within the scene and check for intersection.
+        2) If there are multiple collisions take the closest one.
 
-            if dist_ray < dist:
-                dist = dist_ray
-                closes_obj_index = obj_index
+        3) Find the position of the intersection point.
+        4) Cast a ray from that point to the light source.
+            4a) Find if there is clear line of sight
+            4b) Find out the angles of the light vector hitting the surface.
 
-        if dist == np.inf:
+            5) Determine the color of the ray as a function of: object color, angles, shadow
+
+          """
+
+        ray_origin = self.camera.origin     # starting point of ray
+        t_min = np.inf                      # closest intersection distance
+        closest_idx = 0                     # index of the object with the closest intersection point
+
+        for obj_index, obj in enumerate(self.objects):      # 1) Loop through the obejcts
+
+            t = intersect_ray_sphere(ray_origin, ray_direction, obj.origin, obj.radius)
+
+            if t < t_min:                   # If this intersection is closer, set the t_min to t and store the index
+                t_min = t
+                closest_idx = obj_index
+
+        if t_min == np.inf:                 # If there is no collision  -> the color = background and we return
             color = self.background
-        else:
-            color = self.objects[closes_obj_index].color
+            return color
+
+        if self.light is None:              # If there is no light source: flat shading
+            color = self.objects[closest_idx].color
+            return color
+
+        obj = self.objects[closest_idx]
+
+        # Points of interest:
+        P = ray_origin + t_min * ray_direction      # Point of collision.
+        L = self.light.origin                       # Point of light source
+        R = ray_origin                              # Point of ray source
+        S = obj.origin                              # Point of sphere center
+
+        # Vectors of interest:
+        PL = L - P                                  # Light direction vector
+        N = P - obj.origin                          # Normal surface vector
+        RP = P - R                                  # Ray vector
+
+        # Angles:
+        theta = angle_between(N, PL)
+        alpha = angle_between(RP, PL)
+
+        # Shading constants:
+        I_source = self.light.intensity
+        kd = obj.k_diffuse_reflection
+        ks = obj.k_specular_reflection
+
+        I_diffuse = I_source / t_min * (kd * np.cos(theta))
+        I_specular = I_source / t_min * (ks * np.sin(alpha))
+
+        # print(obj.color, I_diffuse, I_specular)
+
+        color = shading(surface_color=obj.color, diffuse=I_diffuse, specular=I_specular)
 
         return color
 
@@ -144,6 +220,8 @@ class Scene:
 
 def intersect_ray_sphere(ray_origin, ray_dir, sphere_origin, sphere_radius):
 
+    """ Returns the distance to the sphere. Returns INF if does not intersect. """
+
     ro_so = ray_origin - sphere_origin
 
     a = np.dot(ray_dir, ray_dir)
@@ -166,27 +244,32 @@ def intersect_ray_sphere(ray_origin, ray_dir, sphere_origin, sphere_radius):
 
 
 class Light(object):
-    def __init__(self, origin, radius):
+    def __init__(self, origin, radius, intensity):
         self.origin = origin
         self.radius = radius
+        self.intensity = intensity
 
 
 def main(plotting=False):
     # Resolution settings:
-    w = 1000
-    h = 1000
+    w = 550
+    h = 550
 
     # Create scene with camera:
     scene = Scene()
 
     # Populate the scene:
-    sphere1 = Sphere(origin=np.array([8, 0, 0]), radius=1.1, color=np.array([200, 85, 85]))
-    sphere2 = Sphere(origin=np.array([11, 3, 0]), radius=0.8, color=np.array([180, 120, 85]))
-    light = Light(origin=np.array([11, 3, 0]), radius=0.5)
+    sphere1 = Sphere(origin=np.array([8, 0, 0]), radius=1.1, color=np.array([200, 85, 85]),
+                     k_diffuse_reflection=0.5,
+                     k_specular_reflection=0.8)
+    sphere2 = Sphere(origin=np.array([11, 3, 0]), radius=0.8, color=np.array([180, 120, 85]),
+                     k_diffuse_reflection=0.7,
+                     k_specular_reflection=0.7)
+    light = Light(origin=np.array([7, -3, 2]), radius=0.5, intensity=1.2)
 
     scene.add_object(sphere1)
     scene.add_object(sphere2)
-    scene.add_light(light)
+    scene.set_light(light)
 
     # Calculate the ray directions
     print('Generating rays...')
