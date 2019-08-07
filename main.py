@@ -19,7 +19,7 @@ class Camera:
 
         # todo: Right now this assumes that the camera.origin is the same as global coordinate system origin
         direction = np.matmul(self.R, np.transpose(loc))
-        return direction
+        return direction / np.linalg.norm(direction)
 
     def create_rays(self, width, height):
 
