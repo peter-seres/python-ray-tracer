@@ -82,6 +82,22 @@ def trace(ray_origin, ray_dir, spheres):
     G = G + G_obj
     B = B + B_obj
 
+    # Get point of intersection
+    # Get point->light vector
+    # Get intersection normal vector
+    # Get reflection direction vector
+
+    # Check shadow: if not in shadow:
+    #       Do lambert shading
+
+    lambert_intensity = 0.0
+
+    R = R + R_obj * lambert_intensity
+    G = G + G_obj * lambert_intensity
+    B = B + B_obj * lambert_intensity
+
+    # Calculate reflected light by calling trace again recursively
+
     return clip(R), clip(B), clip(G)
 
 
@@ -102,8 +118,8 @@ def render_kernel(pixel_array, rays, spheres):
 
 def main():
     # Resolution settings:
-    w = 400
-    h = 400
+    w = 1000
+    h = 1000
 
     # Generate rays:
     print('Generating Rays...')
