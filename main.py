@@ -3,17 +3,20 @@ from cuda_ray_tracing import *
 import time
 from PIL import Image
 
+RED = [255, 70, 70]
+GREEN = [70, 255, 70]
+BLUE = [70, 70, 255]
+YELLOW = [255, 255, 70]
+
 
 def generate_scene():
 
-    # todo: easier user input to add more spheres, and lights
+    sphere1 = {'origin': [6., 1., 1.], 'radius': 0.8, 'color': RED}
+    sphere2 = {'origin': [3., -1., 1.], 'radius': 0.8, 'color': GREEN}
+    sphere3 = {'origin': [4., -1., -1.], 'radius': 0.8, 'color': BLUE}
+    sphere4 = {'origin': [6., 1., -1.], 'radius': 0.8, 'color': YELLOW}
 
-    sphere1 = {'origin': [6., 1., 1.], 'radius': 0.8, 'color': [255, 70, 70]}       # top left     RED
-    sphere2 = {'origin': [6., -1., 1.], 'radius': 0.8, 'color': [70, 255, 70]}      # top right    GREEN
-    sphere3 = {'origin': [6., -1., -1.], 'radius': 0.8, 'color': [70, 70, 255]}     # bottom right BLUE
-    sphere4 = {'origin': [6., 1., -1.], 'radius': 0.8, 'color': [255, 255, 70]}     # bottom left  YELLOW
-
-    light1 = {'origin': [0.0, -2.0, 1.0]}
+    light1 = {'origin': [0.0, -4.0, 2.0]}
 
     sphere_list = [sphere1, sphere2, sphere3, sphere4]
     light_list = [light1]

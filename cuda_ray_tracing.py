@@ -153,7 +153,7 @@ def trace(ray_origin, ray_dir, spheres, lights, bounce):
     ambient_intensity = 0.3
     lambert_shading = 1.0
     max_bounce = 2
-    specular_shading = 0.5
+    specular_shading = 1.5
 
     # Start with black
     R = 0.0
