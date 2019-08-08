@@ -161,7 +161,7 @@ def trace(ray_origin, ray_dir, spheres, lights, bounce):
     B = 0.0
 
     if bounce > max_bounce:
-        return clip(R), clip(B), clip(G)
+        return clip(R), clip(G), clip(B)
 
     # Declare the color of the object
     R_obj = 0.0
@@ -173,7 +173,7 @@ def trace(ray_origin, ray_dir, spheres, lights, bounce):
 
     # If not: return black
     if intersect_dist == 999.0 or sphere_index == -999:
-        return clip(R), clip(B), clip(G)
+        return clip(R), clip(G), clip(B)
 
     # The color of the sphere:
     R_obj = spheres[4, sphere_index]
@@ -239,7 +239,7 @@ def trace(ray_origin, ray_dir, spheres, lights, bounce):
     G = G + G_refl * specular_shading
     B = B + B_refl * specular_shading
 
-    return clip(R), clip(B), clip(G)
+    return clip(R), clip(G), clip(B)
 
 
 @cuda.jit
@@ -295,8 +295,8 @@ def render_kernel(pixel_array, rays, spheres, lights):
         RD_Z = rays[5, x, y]
 
         # Run the recursive tracing to get R, G, B values
-        pixel_array[0, x, y], pixel_array[1, x, y], pixel_array[2, x, y] = trace((R0_X, R0_Y, R0_Z),
-                                                                                 (RD_X, RD_Y, RD_Z),
-                                                                                 spheres,
-                                                                                 lights,
-                                                                                 0)
+        R, G, B = trace((R0_X, R0_Y, R0_Z), (RD_X, RD_Y, RD_Z), spheres, lights, 0)
+
+        pixel_array[0, x, y] = R
+        pixel_array[1, x, y] = G
+        pixel_array[2, x, y] = B

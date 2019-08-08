@@ -5,6 +5,7 @@ class Camera:
     def __init__(self, field_of_view):
 
         self.field_of_view = field_of_view
+
         # todo: Allow camera coordinate system to be moved and rotated
         self.origin: np.ndarray = np.array([0, 0, 0])
         self.cam_i: np.ndarray = np.array([1, 0, 0])
@@ -22,4 +23,3 @@ class Camera:
         pixel_locations[2, :, :] = zz
 
         return pixel_locations
-
