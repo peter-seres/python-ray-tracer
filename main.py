@@ -7,7 +7,7 @@ RED = [255, 70, 70]
 GREEN = [70, 255, 70]
 BLUE = [70, 70, 255]
 YELLOW = [255, 255, 70]
-GREY = [95, 95, 95]
+GREY = [125, 125, 125]
 
 
 def generate_scene():
@@ -16,15 +16,16 @@ def generate_scene():
     light = {'origin': [0.0, -4.0, 2.0]}
 
     # Spheres:
-    sphere1 = {'origin': [6., 1., 1.], 'radius': 0.8, 'color': RED}
-    sphere2 = {'origin': [3., -1., 1.], 'radius': 0.8, 'color': GREEN}
-    sphere3 = {'origin': [4., -1., -1.], 'radius': 0.8, 'color': BLUE}
-    sphere4 = {'origin': [6., 1., -1.], 'radius': 0.8, 'color': YELLOW}
+    sphere1 = {'origin': [8., 1.8, 1.], 'radius': 0.8, 'color': RED}
+    sphere2 = {'origin': [5., -1., 1.], 'radius': 0.8, 'color': GREEN}
+    sphere3 = {'origin': [6., -1., -1.], 'radius': 0.8, 'color': BLUE}
+    sphere4 = {'origin': [8., 1., -1.], 'radius': 0.8, 'color': YELLOW}
+    sphere5 = {'origin': [8.5, 2.5, -1.], 'radius': 0.8, 'color': BLUE}
 
     # Polygons:
-    plane1 = {'origin': [5, 0, 0], 'normal': [-0.1, 0, 1], 'color': YELLOW}
+    plane1 = {'origin': [5, 0, -2], 'normal': [0, 0, 1], 'color': GREY}
 
-    sphere_list = [sphere1, sphere2, sphere3, sphere4]
+    sphere_list = [sphere1, sphere2, sphere3, sphere4, sphere5]
     light_list = [light]
     plane_list = [plane1]
 
@@ -123,11 +124,13 @@ def main():
     end = time.time()
     print(f'Render time: {1000*(end-start)} ms')
 
-    result = np.array(A).astype(np.uint8)
+    # result = np.array(A).astype(np.uint8)
+    result = A.copy_to_host()
 
     # Save the image to a .png file:
     name = 'output.png'
     print(f'Saving image to {name}')
+
     im = Image.new("RGB", (result.shape[1], result.shape[2]), (255, 255, 255))
     for x, y, color in iter_pixel_array(result):
         im.putpixel((x, y), tuple(color))
