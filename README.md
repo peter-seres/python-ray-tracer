@@ -6,6 +6,10 @@ I have been implementing a ray tracing project in python where my aim is
 to achieve a >30 fps performance for complex scenes. The rendering is 
 done via a CUDA kernel defined using Numba CUDA.
 
+The following scene was rendered in 0.442 milliseconds with an NVIDIA Quadro P1000.
+
+![Render example](https://user-images.githubusercontent.com/27952562/62713185-9ab59780-b9fc-11e9-9b27-237256b2bc38.png)
+
 **Dependencies:** 
 * python 3.7
 * numpy
