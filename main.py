@@ -1,128 +1,26 @@
 import numpy as np
-from scene_objects import Sphere, Plane, Light
-from utilities import timed, unit_vector, save_image, pixelize, reflect
+from cuda_ray_tracing import *
+import time
+from camera import Camera
+from PIL import Image
 
 
-class Camera:
-    def __init__(self, field_of_view):
+def generate_scene(w, h):
+    # Define sphere positions, radiii and colors
+    spheres = np.zeros((7, 2), dtype=np.float32)
 
-        self.field_of_view = field_of_view
-        # todo: Allow camera coordinate system to be moved and rotated
-        self.origin: np.ndarray = np.array([0, 0, 0])
-        self.cam_i: np.ndarray = np.array([1, 0, 0])
-        self.cam_j: np.ndarray = np.array([0, -1, 0])
-        self.cam_k: np.ndarray = np.array([0, 0, 1])
-        self.R = np.array([self.cam_i, self.cam_j, self.cam_k])
+    spheres[0:3, 0]    = np.array([10.0, 0.0, -0.5])
+    spheres[3, 0]      = 2.5
+    spheres[4:7, 0]    = np.array([255, 0, 0])
 
-    def ray_directions(self, loc):
-        """ Calculates the ray direction for a given pixel location <loc>"""
+    spheres[0:3, 1]    = np.array([5.0, 0.5, 0.0])
+    spheres[3, 1]      = 1.0
+    spheres[4:7, 1]    = np.array([0, 0, 255])
 
-        # todo: Right now this assumes that the camera.origin is the same as global coordinate system origin
-        direction = np.matmul(self.R, np.transpose(loc))
-        return direction / np.linalg.norm(direction)
-
-    def create_rays(self, width, height):
-
-        # Pixel locations in local coord system:
-        pixel_locations = np.zeros(shape=(3, width, height))                            # Allocate numpy 3D array
-        yy, zz = np.mgrid[-1:1:complex(0, width), -1:1:complex(0, height)]              # Create pixel grid
-        xx = np.ones(shape=yy.shape) * (1 / np.tan(np.radians(self.field_of_view)/2))   # Distance of grid from origin
-        pixel_locations[0, :, :] = xx
-        pixel_locations[1, :, :] = yy
-        pixel_locations[2, :, :] = zz
-
-        # Calculate ray direction vectors:
-        ray_directions = np.apply_along_axis(self.ray_directions, 0, pixel_locations)
-
-        return ray_directions
-
-
-class Scene:
-    def __init__(self, cam_fov=90, ambient_light=0.3):
-        self.ambient = ambient_light
-        self.objects = []
-        self.light = None
-        self.camera = Camera(field_of_view=cam_fov)
-        self.background = np.array([25, 25, 25])
-
-    def get_intersection(self, ray_origin, ray_direction, reflected_obj=None):
-
-        """ For a given ray -> it returns the object the ray hits and the distance to that point """
-
-        intersection = None
-        for obj in self.objects:
-
-            if obj == reflected_obj:
-                continue
-
-            dist = obj.intersect_ray(ray_origin, ray_direction)
-
-            # If we get an intersection and this intersection is the closest one:
-            if dist is not None and (intersection is None or dist < intersection[1]):
-                intersection = obj, dist
-
-        return intersection
-
-    def trace(self, ray_direction, ray_origin=None, bounce=0, max_bounce=2, reflected_obj=None):
-
-        """ For a given ray:
-
-        0) If this trace is called from a reflection: limit the amount of recursion that can occur:
-        1) Loop through the objects within the scene and check for intersection.
-        2) If there are multiple collisions take the closest one.
-
-        3) Find the position of the intersection point.
-        4) Cast a ray from that point to the light source.
-        4a) Find if there is clear line of sight
-        4b) Find out the angles of the light vector hitting the surface.
-
-        5) Determine the color of the ray as a function of: object color, angles, shadow
-        """
-
-        color = np.array([0.0, 0.0, 0.0])       # Start with darkness
-
-        if bounce > max_bounce:                 # If this is a reflected ray, make sure we don't reflect too many times
-            return pixelize(color)
-
-        if ray_origin is None:                  # If ray origin is not specified, it is coming from the camera
-            ray_origin = self.camera.origin
-
-        # Loop through all scene objects to check for intersections:
-        intersect = self.get_intersection(ray_origin, ray_direction, reflected_obj=reflected_obj)
-
-        if intersect is None:                   # If there is no collision  -> return
-            return pixelize(color)
-
-        obj, dist = intersect
-
-        # Lighting and shading
-        color += obj.color * self.ambient       # Ambient light
-
-        if self.light is None:                  # If there is no light source: dont do shading
-            return pixelize(color)
-
-        # Vectors of interest:
-        P = ray_origin + unit_vector(ray_direction) * dist  # Point of collision.
-        L = unit_vector(self.light.origin - P)              # From intersection to light direction
-        N = obj.get_normal(P)                               # Normal vector at surface
-        R = unit_vector(reflect(ray_direction, N))          # Reflection direction
-
-        # If there is a line of sight to the light source, do the lambert shading:
-        if self.get_intersection(ray_origin=P, ray_direction=L, reflected_obj=obj) is None:
-            lambert_intensity = np.dot(L, N)
-            if lambert_intensity > 0:
-                color += obj.color * obj.k_lambert * lambert_intensity
-
-        # Reflected light:
-        reflected_light = self.trace(ray_direction=R, ray_origin=P, reflected_obj=obj, bounce=bounce+1)
-        color += reflected_light * obj.k_specular
-
-        return pixelize(color)
-
-    @timed
-    def render(self, ray_directions):
-        result = np.apply_along_axis(self.trace, 0, ray_directions)
-        return result
+    # Define the light positions:
+    lights = np.zeros((3, 1), dtype=np.float32)
+    lights[0:3, 0] = np.array([0.0, -1.0, 0.5])
+    return spheres, lights
 
 
 def main():
@@ -130,38 +28,61 @@ def main():
     w = 1000
     h = 1000
 
-    # Create scene with camera:
-    scene = Scene(cam_fov=90)
+    # Generate scene:
+    spheres_host, lights_host = generate_scene(w, h)
+    spheres = cuda.to_device(spheres_host)
+    lights = cuda.to_device(lights_host)
 
-    # Populate the scene:
-    sphere1 = Sphere(origin=np.array([2.5, -1.5, -0.3]), radius=0.7, color=np.array([236, 33, 33]),
-                     k_lambert=0.85, k_specular=0.7)
+    # Generate rays:
+    camera = Camera(field_of_view=45)
+    pixel_locations_host = camera.create_pixel_locations(w, h)
 
-    sphere2 = Sphere(origin=np.array([4, 0, 0]), radius=1.0, color=np.array([51, 153, 255]),
-                     k_lambert=0.85, k_specular=0.8)
+    # Empty rays array to be filled in by the ray-direction kernel
+    rays_host = np.zeros((6, w, h), dtype=np.float32)
 
-    sphere3 = Sphere(origin=np.array([2.5, 0.8, -0.5]), radius=0.3, color=np.array([251, 251, 51]),
-                     k_lambert=0.85, k_specular=0.7)
+    # Data needed to get the ray direction kernel running
+    origin = cuda.to_device(camera.origin)
+    camera_rotation = cuda.to_device(camera.R)
+    pixel_locations = cuda.to_device(pixel_locations_host)
+    rays = cuda.to_device(rays_host)
 
-    scene.light = Light(origin=np.array([0.0, -2.5, 0.0]))
+    # Make an empty pixel array:
+    A = cuda.to_device(np.zeros((3, w, h), dtype=np.uint8))
 
-    plane = Plane(origin=np.array([5.1, 0, 0]), normal=np.array([-1, 0, 0]), k_specular=0.0, k_lambert=1.0)
+    # Setup the cuda kernel grid:
+    threadsperblock = (16, 16)
+    blockspergrid_x = int(np.ceil(A.shape[1] / threadsperblock[0]))
+    blockspergrid_y = int(np.ceil(A.shape[2] / threadsperblock[1]))
+    blockspergrid = (blockspergrid_x, blockspergrid_y)
 
-    scene.objects.append(plane)
-    scene.objects.append(sphere1)
-    scene.objects.append(sphere2)
-    scene.objects.append(sphere3)
+    # Rays it:
+    print('Generating rays array')
+    start = time.time()
+    ray_dir_kernel[blockspergrid, threadsperblock](pixel_locations, rays, origin, camera_rotation)
+    end = time.time()
+    print(f'Compile+generate time: {1000*(end-start)} ms')
 
-    # Calculate the ray directions
-    print('Generating rays...')
-    ray_directions = scene.camera.create_rays(w, h)
+    # Compile it:
+    print('Compiling renderer')
+    start = time.time()
+    render_kernel[blockspergrid, threadsperblock](A, rays, spheres, lights)
+    end = time.time()
+    print(f'Compile time: {1000*(end-start)} ms')
 
-    # Render the image:
+    # Render it:
     print('Rendering...')
-    result = scene.render(ray_directions)
+    start = time.time()
+    render_kernel[blockspergrid, threadsperblock](A, rays, spheres, lights)
+    end = time.time()
+    print(f'Render time: {1000*(end-start)} ms')
 
     # Save the image to a .png file:
-    save_image(result)
+    name = 'output.png'
+    print(f'Saving image to {name}')
+    pixel_array = np.zeros(shape=(A.shape[1], A.shape[2], 3), dtype=np.uint8)
+    for RGB in range(3):
+        pixel_array[:, :, RGB] = A[RGB, :, :]
+    Image.fromarray(np.rot90(pixel_array)).save(name)
 
     return 0
 
