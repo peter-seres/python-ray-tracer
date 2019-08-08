@@ -7,19 +7,26 @@ RED = [255, 70, 70]
 GREEN = [70, 255, 70]
 BLUE = [70, 70, 255]
 YELLOW = [255, 255, 70]
+GREY = [95, 95, 95]
 
 
 def generate_scene():
 
+    # Light source: (only 1 for now)
+    light = {'origin': [0.0, -4.0, 2.0]}
+
+    # Spheres:
     sphere1 = {'origin': [6., 1., 1.], 'radius': 0.8, 'color': RED}
     sphere2 = {'origin': [3., -1., 1.], 'radius': 0.8, 'color': GREEN}
     sphere3 = {'origin': [4., -1., -1.], 'radius': 0.8, 'color': BLUE}
     sphere4 = {'origin': [6., 1., -1.], 'radius': 0.8, 'color': YELLOW}
 
-    light1 = {'origin': [0.0, -4.0, 2.0]}
+    # Polygons:
+    plane1 = {'origin': [5, 0, 0], 'normal': [-0.1, 0, 1], 'color': YELLOW}
 
     sphere_list = [sphere1, sphere2, sphere3, sphere4]
-    light_list = [light1]
+    light_list = [light]
+    plane_list = [plane1]
 
     # Build the sphere data array
     spheres = np.zeros((7, len(sphere_list)), dtype=np.float32)
@@ -28,13 +35,19 @@ def generate_scene():
         spheres[3, i]      = s['radius']
         spheres[4:7, i]    = np.array(s['color'])
 
-    # Build the light data array
+    # Build the sphere data array
     lights = np.zeros((3, len(light_list)), dtype=np.float32)
-    for i, light in enumerate(light_list):
-        # print(i)
-        lights[0:3, i]    = np.array(np.array(light['origin']))
+    for i, lig in enumerate(light_list):
+        lights[0:3, i]    = np.array(lig['origin'])
 
-    return spheres, lights
+    # Build the polygon data array
+    planes = np.zeros((9, len(plane_list)), dtype=np.float32)
+    for i, p in enumerate(plane_list):
+        planes[0:3, i]    = np.array(p['origin'])
+        planes[3:6, i]    = np.array(p['normal']) / np.linalg.norm(np.array(p['normal']))
+        planes[6:, i]    = np.array(p['color'])
+
+    return spheres, lights, planes
 
 
 def generate_rays(width, height, field_of_view=45, camera_position=None):
@@ -42,7 +55,7 @@ def generate_rays(width, height, field_of_view=45, camera_position=None):
         camera_position = [0, 0, 0]                                                 # Default at origin
     R = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])                                 # Rotation matrix
     AR = width/height
-    yy, zz = np.mgrid[AR:-AR:complex(0, width), 1:-1:complex(0, height)]              # Create pixel grid
+    yy, zz = np.mgrid[AR:-AR:complex(0, width), 1:-1:complex(0, height)]            # Create pixel grid
     xx = np.ones(shape=yy.shape) * (1 / np.tan(np.radians(field_of_view) / 2))      # Distance of grid from origin
     pixel_locations = np.array([xx, yy, zz])
 
@@ -61,9 +74,10 @@ def main():
     h = 1080
 
     # Generate scene:
-    spheres_host, lights_host = generate_scene()
+    spheres_host, light_host, planes_host = generate_scene()
     spheres = cuda.to_device(spheres_host)
-    lights = cuda.to_device(lights_host)
+    light = cuda.to_device(light_host)
+    planes = cuda.to_device(planes_host)
 
     # Generate rays:
     camera_origin_host, camera_rotation_host, pixel_locations_host = generate_rays(w, h)
@@ -96,7 +110,7 @@ def main():
     # Compile it:
     print('Compiling renderer')
     start = time.time()
-    render_kernel[blockspergrid, threadsperblock](A, rays, spheres, lights)
+    render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes)
     end = time.time()
     print(f'Compile time: {1000*(end-start)} ms')
 
@@ -105,7 +119,7 @@ def main():
     print(f'Rendering {N} times...')
     start = time.time()
     for i in range(N):
-        render_kernel[blockspergrid, threadsperblock](A, rays, spheres, lights)
+        render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes)
     end = time.time()
     print(f'Render time: {1000*(end-start)} ms')
 
