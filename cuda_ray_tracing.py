@@ -254,8 +254,8 @@ def ray_dir_kernel(pixel_locations, rays, O, R):
     if x <= pixel_locations.shape[1] and y <= pixel_locations.shape[2]:
 
         PX = pixel_locations[0, x, y]
-        PZ = pixel_locations[1, x, y]
-        PY = pixel_locations[2, x, y]
+        PY = pixel_locations[1, x, y]
+        PZ = pixel_locations[2, x, y]
 
         # Ray direction is:
         # todo: this assumes O is at [0, 0, 0] for now.
