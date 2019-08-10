@@ -6,9 +6,10 @@ from cuda_ray_tracing import *
 import numpy as np
 import PIL.Image
 import PIL.ImageOps
+import threading
 
 
-class Scene:
+class Renderer:
     def __init__(self, width, height):
         # Resolution settings:
         self.width = width
@@ -55,6 +56,8 @@ class Scene:
 
         self.stream = cuda.stream()
 
+        self.image = None
+
     def update_camera(self):
         # Set up the camera:
 
@@ -86,9 +89,7 @@ class Scene:
                                                                 self.ref_depth)
 
     def get_render(self):
-        start = time.time()
         x = self.A.copy_to_host(stream=self.stream)
-        end = time.time()
         y = np.zeros(shape=(x.shape[1], x.shape[2], 3))
 
         for i in range(3):
@@ -98,42 +99,39 @@ class Scene:
         image = image.rotate(270)
         image = PIL.ImageOps.mirror(image)
 
-        # print(1000*(end-start), 'ms')
-
         return image
+
+    def render_loop(self):
+        self.render()
+        self.image = self.get_render()
 
 
 class RenderWindow(arcade.Window):
-    def __init__(self, width, height, scene):
+    def __init__(self, width, height, renderer):
         super().__init__(width=width, height=height)
 
-        self.scene = scene
+        self.renderer = renderer
         self.set_update_rate(1./30)
         self.buffer = None
 
-        self.last_time = time.time()
+        self.FPS = 0.0
 
     def on_draw(self):
         # Draw the background texture
         if self.buffer is not None:
+            draw_start = time.time()
             self.buffer.draw(center_x=self.width//2, center_y=self.height//2,
                              width=self.width, height=self.height)
-        now = time.time()
-        print(1000*(now - self.last_time), 'ms')
-        self.last_time = now
+            draw_end = time.time()
+            # print('drawtime:', 1000*(draw_end-draw_start))
+
+            arcade.draw_text(text='FPS: '+'{:.1f}'.format(self.FPS), start_x=30, start_y=self.height-35,
+                             color=arcade.color.WHITE, font_size=22)
 
     def update(self, dt):
-        # Move camera:
-        # self.scene.camera_position[0] += 1
-        # self.scene.camera_euler[2] += 1
-
-        # Update rays and render:
-        # self.scene.update_camera()
-        self.scene.render()
-
+        self.FPS = (1 / dt)
         # Load result
-        image = self.scene.get_render()
-        self.buffer = arcade.Texture('render_result', image)
+        self.buffer = arcade.Texture('render_result', self.renderer.image)
 
 
 def main():
@@ -141,12 +139,21 @@ def main():
     w = 1000
     h = 1000
 
-    scene = Scene(width=w, height=h)
-    window = RenderWindow(width=w, height=h, scene=scene)
+    # Ray tracing renderer:
+    renderer = Renderer(width=w, height=h)
+    thread_get = threading.Thread(target=renderer.render_loop, args=())
 
+    # Arcade GUI window
+    window = RenderWindow(width=w, height=h, renderer=renderer)
+
+    # Start the renderer Loop thread
+    thread_get.start()
+
+    # Start the GUI window
     arcade.run()
 
     return 0
 
 
-main()
+if __name__ == "__main__":
+    main()
