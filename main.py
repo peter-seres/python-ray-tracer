@@ -8,29 +8,32 @@ GREEN = [70, 255, 70]
 BLUE = [70, 70, 255]
 YELLOW = [255, 255, 70]
 GREY = [125, 125, 125]
+MAGENTA = [139, 0, 139]
 
 
 def generate_scene():
 
     # Light source: (only 1 for now)
-    light = {'origin': [0.0, -3.0, 2.0]}
+    light = {'origin': [0.0, -2.0, 2.0]}
 
     # Spheres:
-    sphere1 = {'origin': [8., 1.8, 1.], 'radius': 0.8, 'color': RED}
-    sphere2 = {'origin': [5., -1., 1.], 'radius': 0.8, 'color': GREEN}
-    sphere3 = {'origin': [6., -1., -1.], 'radius': 0.8, 'color': BLUE}
-    sphere4 = {'origin': [8., 1., -1.], 'radius': 0.8, 'color': YELLOW}
-    sphere5 = {'origin': [8.5, 2.5, -1.], 'radius': 0.8, 'color': BLUE}
+    # sphere1 = {'origin': [8., 1.8, 1.], 'radius': 0.8, 'color': RED}
+    # sphere2 = {'origin': [5., -1., 1.], 'radius': 0.8, 'color': GREEN}
+    # sphere3 = {'origin': [6., -1., -1.], 'radius': 0.8, 'color': BLUE}
+    # sphere4 = {'origin': [8., 1., -1.], 'radius': 0.8, 'color': YELLOW}
+    # sphere5 = {'origin': [8.5, 2.5, -1.], 'radius': 0.8, 'color': BLUE}
 
-    # sphere1 = {'origin': [6.0, 0.0, 0.5], 'radius': 0.99, 'color': RED}
-    # sphere2 = {'origin': [-2., 0., 0.5], 'radius': 0.99, 'color': GREEN}
-    # sphere3 = {'origin': [-3., -1.5, 0.5], 'radius': 0.99, 'color': BLUE}
+    sphere1 = {'origin': [4.0, 0.0, 0.3], 'radius': 0.995, 'color': RED}
+    sphere2 = {'origin': [-1, 0., 0.3], 'radius': 0.995, 'color': GREEN}
+    sphere3 = {'origin': [-2., 2, 0.6], 'radius': 1.1, 'color': BLUE}
+    sphere4 = {'origin': [4.0, -2.3, 0.5], 'radius': 1.2, 'color': GREEN}
+    sphere5 = {'origin': [2.5, 1.3, -0.3], 'radius': 0.4, 'color': MAGENTA}
 
     # Polygons:
-    plane1 = {'origin': [5, 0, -2.0], 'normal': [0, 0, 1], 'color': GREY}
+    plane1 = {'origin': [5, 0, -0.7], 'normal': [0, 0, 1], 'color': GREY}
 
+    # sphere_list = [sphere1, sphere2, sphere3, sphere4, sphere5]
     sphere_list = [sphere1, sphere2, sphere3, sphere4, sphere5]
-    # sphere_list = [sphere1, sphere2, sphere3]
     light_list = [light]
     plane_list = [plane1]
 
@@ -79,6 +82,8 @@ def main(do_render_timing_test=False):
     w = 1920
     h = 1080
 
+    ambient_int, lambert_int, reflection_int = 0.1, 1.0, 0.5
+
     # Generate scene:
     spheres_host, light_host, planes_host = generate_scene()
     spheres = cuda.to_device(spheres_host)
@@ -116,17 +121,15 @@ def main(do_render_timing_test=False):
     # Compile + render it:
     print('Compiling and running render')
     start = time.time()
-    render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, True)
+    render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, ambient_int, lambert_int, reflection_int)
     end = time.time()
     print(f'Compile + render time: {1000*(end-start)} ms')
 
-    # Render it:
+    # Render it: (run it once more to measure render only time
     if do_render_timing_test:
-        N = 1000
         print(f'Rendering {N} times...')
         start = time.time()
-        for i in range(N):
-            render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes)
+        render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, ambient_int, lambert_int, reflection_int)
         end = time.time()
         print(f'Render time: {1000*(end-start)} ms')
 
@@ -143,4 +146,4 @@ def main(do_render_timing_test=False):
 
 
 if __name__ == '__main__':
-    main(do_render_timing_test=False)
+    main(do_render_timing_test=True)
