@@ -82,15 +82,15 @@ class Scene:
 
     def get_render(self):
         x = self.A.copy_to_host()
+        y = np.zeros(shape=(x.shape[1], x.shape[2], 3))
 
-        mode = "RGB"
-        size = x.shape[2], x.shape[1]
-        obj = x.tobytes()
-        rawmode = mode
+        for i in range(3):
+            y[:, :, i] = x[i, :, :]
 
-        # print(size)
+        image = PIL.Image.fromarray(y.astype(np.uint8), mode='RGB')
+        image = image.rotate(270)
+        image = PIL.ImageOps.mirror(image)
 
-        image = PIL.Image.frombuffer(mode, size, obj, "raw", rawmode, 0, 1)
         return image
 
     def iter_pixel_array(self, A):
@@ -120,8 +120,8 @@ class RenderWindow(arcade.Window):
 
         # Draw the background texture
         if self.buffer is not None:
-            arcade.draw_texture_rectangle(self.width // 2, self.height // 2,
-                                          self.width, self.height, self.buffer)
+            self.buffer.draw(center_x=self.width//2, center_y=self.height//2,
+                             width=self.width, height=self.height)
 
     def my_load_texture(self):
         image = self.scene.get_render()
@@ -131,7 +131,8 @@ class RenderWindow(arcade.Window):
 
     def update(self, dt):
         # Move camera:
-        self.scene.camera_euler[2] += 1
+        self.scene.camera_position[0] += 1
+        # self.scene.camera_euler[2] += 1
 
         # Update rays and render:
         self.scene.update_camera()
@@ -143,8 +144,8 @@ class RenderWindow(arcade.Window):
 
 def main():
     # Resolution settings:
-    w = 800
-    h = 600
+    w = 1000
+    h = 1000
 
     scene = Scene(width=w, height=h)
     window = RenderWindow(width=w, height=h, scene=scene)

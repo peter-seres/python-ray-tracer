@@ -1,7 +1,8 @@
 import numpy as np
 from cuda_ray_tracing import *
 import time
-from PIL import Image
+import PIL.Image
+import PIL.ImageOps
 
 RED = [255, 70, 70]
 GREEN = [70, 255, 70]
@@ -117,8 +118,8 @@ def iter_pixel_array(A):
 
 def main(do_render_timing_test=False):
     # Resolution settings:
-    w = 1920
-    h = 1080
+    w = 1000
+    h = 1000
 
     ambient_int, lambert_int, reflection_int = 0.1, 0.6, 0.5
 
@@ -164,7 +165,7 @@ def main(do_render_timing_test=False):
     # Compile + render it:
     print('Compiling and running render')
     start = time.time()
-    render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, ambient_int, lambert_int, reflection_int)
+    render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, ambient_int, lambert_int, reflection_int, 4)
     end = time.time()
     print(f'Compile + render time: {1000*(end-start)} ms')
 
@@ -172,21 +173,40 @@ def main(do_render_timing_test=False):
     if do_render_timing_test:
         print(f'Rendering...')
         start = time.time()
-        render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, ambient_int, lambert_int, reflection_int)
+        render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, ambient_int, lambert_int, reflection_int, 4)
         end = time.time()
         print(f'Render time: {1000*(end-start)} ms')
 
     # Get the pixel array from GPU memory.
     result = A.copy_to_host()
 
+    image, x, y = get_render(result)
+    image.save('get_render_output.png')
+
     # Save the image to a .png file:
-    name = 'output.png'
-    print(f'Saving image to {name}')
-    im = Image.new("RGB", (result.shape[1], result.shape[2]), (255, 255, 255))
-    for x, y, color in iter_pixel_array(result):
-        im.putpixel((x, y), tuple(color))
-    im.save(name)
+    # name = 'output.png'
+    # print(f'Saving image to {name}')
+    # im = Image.new("RGB", (result.shape[1], result.shape[2]), (255, 255, 255))
+    # for x, y, color in iter_pixel_array(result):
+    #     im.putpixel((x, y), tuple(color))
+    # im.save(name)
+
+    return x, y
+
+
+def get_render(x):
+
+    y = np.zeros(shape=(x.shape[1], x.shape[2], 3))
+
+    for i in range(3):
+        y[:, :, i] = x[i, :, :]
+
+    image = PIL.Image.fromarray(y.astype(np.uint8), mode='RGB')
+    image = image.rotate(270)
+    image = PIL.ImageOps.mirror(image)
+
+    return image, x, y
 
 
 if __name__ == '__main__':
-    main(do_render_timing_test=False)
+    x, y = main(do_render_timing_test=False)
