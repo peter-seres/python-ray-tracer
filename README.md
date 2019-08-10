@@ -29,3 +29,4 @@ dictionaries in generate_scene() within main.py
 4) moving and rotating the camera
 5) window view and real-time renderer
 6) gui to place elements into the scene and change material types
+7) add anti-aliasing
