@@ -13,19 +13,24 @@ GREY = [125, 125, 125]
 def generate_scene():
 
     # Light source: (only 1 for now)
-    light = {'origin': [0.0, -4.0, 2.0]}
+    light = {'origin': [0.0, -3.0, 2.0]}
 
     # Spheres:
-    sphere1 = {'origin': [8., 1.8, 1.], 'radius': 0.8, 'color': RED}
-    sphere2 = {'origin': [5., -1., 1.], 'radius': 0.8, 'color': GREEN}
-    sphere3 = {'origin': [6., -1., -1.], 'radius': 0.8, 'color': BLUE}
-    sphere4 = {'origin': [8., 1., -1.], 'radius': 0.8, 'color': YELLOW}
-    sphere5 = {'origin': [8.5, 2.5, -1.], 'radius': 0.8, 'color': BLUE}
+    # sphere1 = {'origin': [8., 1.8, 1.], 'radius': 0.8, 'color': RED}
+    # sphere2 = {'origin': [5., -1., 1.], 'radius': 0.8, 'color': GREEN}
+    # sphere3 = {'origin': [6., -1., -1.], 'radius': 0.8, 'color': BLUE}
+    # sphere4 = {'origin': [8., 1., -1.], 'radius': 0.8, 'color': YELLOW}
+    # sphere5 = {'origin': [8.5, 2.5, -1.], 'radius': 0.8, 'color': BLUE}
+
+    sphere1 = {'origin': [6.0, 0.0, 0.5], 'radius': 0.99, 'color': RED}
+    sphere2 = {'origin': [-2., 0., 0.5], 'radius': 0.99, 'color': GREEN}
+    sphere3 = {'origin': [-3., -1.5, 0.5], 'radius': 0.99, 'color': BLUE}
 
     # Polygons:
-    plane1 = {'origin': [5, 0, -2], 'normal': [0, 0, 1], 'color': GREY}
+    plane1 = {'origin': [5, 0, -0.5], 'normal': [0, 0, 1], 'color': GREY}
 
-    sphere_list = [sphere1, sphere2, sphere3, sphere4, sphere5]
+    # sphere_list = [sphere1, sphere2, sphere3, sphere4, sphere5]
+    sphere_list = [sphere1, sphere2, sphere3]
     light_list = [light]
     plane_list = [plane1]
 
@@ -69,10 +74,10 @@ def iter_pixel_array(A):
             yield x, y, A[:, x, y]
 
 
-def main():
+def main(do_render_timing_test=False):
     # Resolution settings:
-    w = 1920
-    h = 1080
+    w = 1000
+    h = 1000
 
     # Generate scene:
     spheres_host, light_host, planes_host = generate_scene()
@@ -86,7 +91,7 @@ def main():
     # Empty rays array to be filled in by the ray-direction kernel
     rays_host = np.zeros((6, w, h), dtype=np.float32)
 
-    # Data needed to get the ray direction kernel running
+    # Send data needed to get the ray direction kernel running to the device:
     origin = cuda.to_device(camera_origin_host)
     camera_rotation = cuda.to_device(camera_rotation_host)
     pixel_locations = cuda.to_device(pixel_locations_host)
@@ -102,35 +107,35 @@ def main():
     blockspergrid = (blockspergrid_x, blockspergrid_y)
 
     # Rays it:
-    print('Generating rays array')
+    print('Generating ray directions')
     start = time.time()
     ray_dir_kernel[blockspergrid, threadsperblock](pixel_locations, rays, origin, camera_rotation)
     end = time.time()
     print(f'Compile+generate time: {1000*(end-start)} ms')
 
-    # Compile it:
-    print('Compiling renderer')
+    # Compile + render it:
+    print('Compiling and running render')
     start = time.time()
-    render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes)
+    render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, True)
     end = time.time()
-    print(f'Compile time: {1000*(end-start)} ms')
+    print(f'Compile + render time: {1000*(end-start)} ms')
 
     # Render it:
-    N = 1000
-    print(f'Rendering {N} times...')
-    start = time.time()
-    for i in range(N):
-        render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes)
-    end = time.time()
-    print(f'Render time: {1000*(end-start)} ms')
+    if do_render_timing_test:
+        N = 1000
+        print(f'Rendering {N} times...')
+        start = time.time()
+        for i in range(N):
+            render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes)
+        end = time.time()
+        print(f'Render time: {1000*(end-start)} ms')
 
-    # result = np.array(A).astype(np.uint8)
+    # Get the pixel array from GPU memory.
     result = A.copy_to_host()
 
     # Save the image to a .png file:
     name = 'output.png'
     print(f'Saving image to {name}')
-
     im = Image.new("RGB", (result.shape[1], result.shape[2]), (255, 255, 255))
     for x, y, color in iter_pixel_array(result):
         im.putpixel((x, y), tuple(color))
@@ -138,4 +143,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main(do_render_timing_test=False)
