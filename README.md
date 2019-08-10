@@ -1,14 +1,14 @@
 # ray_tracing
-Ray Tracing with python using Nvidia GPU (work in progress)
+Ray Tracing with python using GPU (work in progress)
 
 
 I have been implementing a ray tracing project in python where my aim is 
 to achieve a >30 fps performance for complex scenes. The rendering is 
 done via a CUDA kernel defined using Numba CUDA.
 
-The following scene was rendered in 0.442 milliseconds with an NVIDIA Quadro P1000.
+The following scene takes less than 1 ms to render after the code is compiled (laptop with an Nvidia Quadro P1000)
 
-![Render example](https://user-images.githubusercontent.com/27952562/62713185-9ab59780-b9fc-11e9-9b27-237256b2bc38.png)
+![Render example](https://user-images.githubusercontent.com/27952562/62824447-2d416c80-bb9e-11e9-8a35-cd432c76c976.png)
 
 **Dependencies:** 
 * python 3.7
@@ -28,4 +28,4 @@ dictionaries in generate_scene() within main.py
 3) scatter
 4) moving and rotating the camera
 5) window view and real-time renderer
-6) gui to place elements
+6) gui to place elements into the scene and change material types
