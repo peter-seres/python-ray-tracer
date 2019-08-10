@@ -16,21 +16,21 @@ def generate_scene():
     light = {'origin': [0.0, -3.0, 2.0]}
 
     # Spheres:
-    # sphere1 = {'origin': [8., 1.8, 1.], 'radius': 0.8, 'color': RED}
-    # sphere2 = {'origin': [5., -1., 1.], 'radius': 0.8, 'color': GREEN}
-    # sphere3 = {'origin': [6., -1., -1.], 'radius': 0.8, 'color': BLUE}
-    # sphere4 = {'origin': [8., 1., -1.], 'radius': 0.8, 'color': YELLOW}
-    # sphere5 = {'origin': [8.5, 2.5, -1.], 'radius': 0.8, 'color': BLUE}
+    sphere1 = {'origin': [8., 1.8, 1.], 'radius': 0.8, 'color': RED}
+    sphere2 = {'origin': [5., -1., 1.], 'radius': 0.8, 'color': GREEN}
+    sphere3 = {'origin': [6., -1., -1.], 'radius': 0.8, 'color': BLUE}
+    sphere4 = {'origin': [8., 1., -1.], 'radius': 0.8, 'color': YELLOW}
+    sphere5 = {'origin': [8.5, 2.5, -1.], 'radius': 0.8, 'color': BLUE}
 
-    sphere1 = {'origin': [6.0, 0.0, 0.5], 'radius': 0.99, 'color': RED}
-    sphere2 = {'origin': [-2., 0., 0.5], 'radius': 0.99, 'color': GREEN}
-    sphere3 = {'origin': [-3., -1.5, 0.5], 'radius': 0.99, 'color': BLUE}
+    # sphere1 = {'origin': [6.0, 0.0, 0.5], 'radius': 0.99, 'color': RED}
+    # sphere2 = {'origin': [-2., 0., 0.5], 'radius': 0.99, 'color': GREEN}
+    # sphere3 = {'origin': [-3., -1.5, 0.5], 'radius': 0.99, 'color': BLUE}
 
     # Polygons:
-    plane1 = {'origin': [5, 0, -0.5], 'normal': [0, 0, 1], 'color': GREY}
+    plane1 = {'origin': [5, 0, -2.0], 'normal': [0, 0, 1], 'color': GREY}
 
-    # sphere_list = [sphere1, sphere2, sphere3, sphere4, sphere5]
-    sphere_list = [sphere1, sphere2, sphere3]
+    sphere_list = [sphere1, sphere2, sphere3, sphere4, sphere5]
+    # sphere_list = [sphere1, sphere2, sphere3]
     light_list = [light]
     plane_list = [plane1]
 
@@ -76,8 +76,8 @@ def iter_pixel_array(A):
 
 def main(do_render_timing_test=False):
     # Resolution settings:
-    w = 1000
-    h = 1000
+    w = 1920
+    h = 1080
 
     # Generate scene:
     spheres_host, light_host, planes_host = generate_scene()

@@ -176,9 +176,20 @@ def get_plane_normal(plane_index, planes):
 @cuda.jit(device=True)
 def get_reflection(ray_dir, normal):
     """ Returns the unit reflection direction vector."""
-    R0 = ray_dir[0] - 2 * (ray_dir[0] * normal[0]) * normal[0]
-    R1 = ray_dir[1] - 2 * (ray_dir[1] * normal[1]) * normal[1]
-    R2 = ray_dir[2] - 2 * (ray_dir[2] * normal[2]) * normal[2]
+    D0 = ray_dir[0]
+    D1 = ray_dir[1]
+    D2 = ray_dir[2]
+
+    N0 = normal[0]
+    N1 = normal[1]
+    N2 = normal[2]
+
+    D_dot_N = D0 * N0 + D1 * N1 + D2 * N2
+
+    R0 = D0 - 2 * D_dot_N * N0
+    R1 = D1 - 2 * D_dot_N * N1
+    R2 = D2 - 2 * D_dot_N * N2
+
     norm = math.sqrt(R0 * R0 + R1 * R1 + R2 * R2)
     R0 = R0 / norm
     R1 = R1 / norm
@@ -329,17 +340,17 @@ def trace(ray_origin, ray_dir, spheres, lights, planes):
 
     # Calculate reflected light by casting an additional ray from intersection point P:
     # (Only 1 reflection for now):
-    if obj_type == 1:
-        R_refl, G_refl, B_refl = trace_reflection((P0, P1, P2), (R0, R1, R2), spheres, lights, planes)
+    # if obj_type == 1:
+    R_refl, G_refl, B_refl = trace_reflection((P0, P1, P2), (R0, R1, R2), spheres, lights, planes)
 
     reflection_intensity = 0.5
     R = R + R_refl * reflection_intensity
     G = G + G_refl * reflection_intensity
     B = B + B_refl * reflection_intensity
 
-    color = (R, G, B)
-    reflection_point = (P0, P1, P2)
-    reflection_direction = (R0, R1, R2)
+    # color = (R, G, B)
+    # reflection_point = (P0, P1, P2)
+    # reflection_direction = (R0, R1, R2)
 
     return R, G, B
 
