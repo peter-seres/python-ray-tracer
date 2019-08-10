@@ -1,12 +1,15 @@
 import time
 
 import arcade
-from main import generate_rays, generate_scene
+from main import generate_rays, generate_scene, rotation_x, rotation_y, rotation_z
 from cuda_ray_tracing import *
 import numpy as np
 import PIL.Image
 import PIL.ImageOps
 import threading
+
+
+UPDATE_RATE = 1./30
 
 
 class Renderer:
@@ -57,17 +60,21 @@ class Renderer:
         self.stream = cuda.stream()
 
         self.image = None
+        self.updated = False
 
-    def update_camera(self):
-        # Set up the camera:
+    def update_camera_position(self):
+        self.origin = cuda.to_device(self.camera_position)
+        # self.rays = cuda.to_device(np.zeros((6, self.width, self.height), dtype=np.float32))
+        self.ray_dir()
 
-        camera_origin_host, camera_rotation_host, pixel_locations_host = \
-            generate_rays(self.width, self.height, camera_rotation=self.camera_euler, camera_position=self.camera_position)
+    def update_camera_rotation(self):
 
-        self.origin = cuda.to_device(camera_origin_host)
-        self.camera_R = cuda.to_device(camera_rotation_host)
-        self.pixel_locations = cuda.to_device(pixel_locations_host)
+        RZ = rotation_z(self.camera_euler[2])
+        RY = rotation_y(self.camera_euler[1])
 
+        ROT = np.matmul(RY, RZ)
+
+        self.camera_R = cuda.to_device(ROT)
         self.ray_dir()
 
     def ray_dir(self):
@@ -102,8 +109,19 @@ class Renderer:
         return image
 
     def render_loop(self):
-        self.render()
-        self.image = self.get_render()
+        last_time = time.time()
+        while True:
+            now = time.time()
+            dt = now - last_time
+            last_time = now
+            if dt < UPDATE_RATE:
+                time.sleep(UPDATE_RATE-dt)
+
+            # self.ray_dir()
+            self.render()
+            self.image = self.get_render()
+
+            self.updated = True
 
 
 class RenderWindow(arcade.Window):
@@ -111,7 +129,7 @@ class RenderWindow(arcade.Window):
         super().__init__(width=width, height=height)
 
         self.renderer = renderer
-        self.set_update_rate(1./30)
+        self.set_update_rate(1./5)
         self.buffer = None
 
         self.FPS = 0.0
@@ -123,7 +141,6 @@ class RenderWindow(arcade.Window):
             self.buffer.draw(center_x=self.width//2, center_y=self.height//2,
                              width=self.width, height=self.height)
             draw_end = time.time()
-            # print('drawtime:', 1000*(draw_end-draw_start))
 
             arcade.draw_text(text='FPS: '+'{:.1f}'.format(self.FPS), start_x=30, start_y=self.height-35,
                              color=arcade.color.WHITE, font_size=22)
@@ -131,7 +148,53 @@ class RenderWindow(arcade.Window):
     def update(self, dt):
         self.FPS = (1 / dt)
         # Load result
-        self.buffer = arcade.Texture('render_result', self.renderer.image)
+        if self.renderer.updated:
+            self.buffer = arcade.Texture('render_result', self.renderer.image)
+            self.renderer.update = False
+
+    def on_key_press(self, symbol, mod):
+
+        camera_speed = 0.1
+        camera_rot_speed = 5
+
+        if symbol == arcade.key.W:
+            self.renderer.camera_position[0] += camera_speed
+            self.renderer.update_camera_position()
+        elif symbol == arcade.key.S:
+            self.renderer.camera_position[0] += -camera_speed
+            self.renderer.update_camera_position()
+        elif symbol == arcade.key.A:
+            self.renderer.camera_position[1] += camera_speed
+            self.renderer.update_camera_position()
+        elif symbol == arcade.key.D:
+            self.renderer.camera_position[1] += -camera_speed
+            self.renderer.update_camera_position()
+        elif symbol == arcade.key.LSHIFT:
+            self.renderer.camera_position[2] += camera_speed
+            self.renderer.update_camera_position()
+        elif symbol == arcade.key.LCTRL:
+            self.renderer.camera_position[2] += -camera_speed
+            self.renderer.update_camera_position()
+
+        # ROTATE LEFT
+        elif symbol == arcade.key.Q:
+            self.renderer.camera_euler[2] += camera_rot_speed
+            self.renderer.update_camera_rotation()
+
+        # ROTATE RIGHT
+        elif symbol == arcade.key.E:
+            self.renderer.camera_euler[2] += -camera_rot_speed
+            self.renderer.update_camera_rotation()
+
+        # PITCH DOWN
+        elif symbol == arcade.key.K:
+            self.renderer.camera_euler[1] += -camera_rot_speed
+            self.renderer.update_camera_rotation()
+
+        # PITCH UP
+        elif symbol == arcade.key.M:
+            self.renderer.camera_euler[1] += camera_rot_speed
+            self.renderer.update_camera_rotation()
 
 
 def main():
