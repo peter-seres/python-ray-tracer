@@ -59,10 +59,47 @@ def generate_scene():
     return spheres, lights, planes
 
 
-def generate_rays(width, height, field_of_view=45, camera_position=None):
+def rotation_z(psi):
+    """ Return the Rotation matrix around the Z-axis for psi in degrees. """
+    psi = np.deg2rad(psi)
+    R_rot = np.array([[np.cos(psi), -np.sin(psi), 0],
+                      [np.sin(psi), np.cos(psi), 0],
+                      [0, 0, 1]])
+    return R_rot
+
+
+def rotation_y(theta):
+    """ Return the Rotation matrix around the Y-axis for theta in degrees. """
+    theta = np.deg2rad(theta)
+    R_rot = np.array([[np.cos(theta), 0, -np.sin(theta)],
+                      [0,             1,               0],
+                      [np.sin(theta), 0, np.cos(theta)]])
+    return R_rot
+
+
+def rotation_x(phi):
+    """ Return the Rotation matrix around the X-axis for phi in degrees. """
+    phi = np.deg2rad(phi)
+    R_rot = np.array([[1, 0, 0],
+                      [0, np.cos(phi), -np.sin(phi)],
+                      [0, np.sin(phi), np.cos(phi)]])
+    return R_rot
+
+
+def generate_rays(width, height, camera_rotation=None, field_of_view=45, camera_position=None):
     if camera_position is None:
         camera_position = [0, 0, 0]                                                 # Default at origin
+
     R = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])                                 # Rotation matrix
+
+    if camera_rotation is None:
+        camera_rotation = [0, 0, 0]
+
+    Ry = rotation_y(camera_rotation[1])
+    Rz = rotation_z(camera_rotation[2])
+
+    R = np.matmul(Rz, Ry)
+
     AR = width/height
     yy, zz = np.mgrid[AR:-AR:complex(0, width), 1:-1:complex(0, height)]            # Create pixel grid
     xx = np.ones(shape=yy.shape) * (1 / np.tan(np.radians(field_of_view) / 2))      # Distance of grid from origin
@@ -91,7 +128,8 @@ def main(do_render_timing_test=False):
     planes = cuda.to_device(planes_host)
 
     # Generate rays:
-    camera_origin_host, camera_rotation_host, pixel_locations_host = generate_rays(w, h)
+    camera_rotation = [0, -15, -30]
+    camera_origin_host, camera_rotation_host, pixel_locations_host = generate_rays(w, h, camera_rotation=camera_rotation)
 
     # Empty rays array to be filled in by the ray-direction kernel
     rays_host = np.zeros((6, w, h), dtype=np.float32)
@@ -127,7 +165,7 @@ def main(do_render_timing_test=False):
 
     # Render it: (run it once more to measure render only time
     if do_render_timing_test:
-        print(f'Rendering {N} times...')
+        print(f'Rendering...')
         start = time.time()
         render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, ambient_int, lambert_int, reflection_int)
         end = time.time()
@@ -146,4 +184,4 @@ def main(do_render_timing_test=False):
 
 
 if __name__ == '__main__':
-    main(do_render_timing_test=True)
+    main(do_render_timing_test=False)

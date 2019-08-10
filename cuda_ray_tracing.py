@@ -340,8 +340,6 @@ def ray_dir_kernel(pixel_locations, rays, O, R):
         PZ = pixel_locations[2, x, y]
 
         # Ray direction is:
-        # todo: this assumes O is at [0, 0, 0] for now.
-
         RD_X = R[0, 0] * PX + R[0, 1] * PY + R[0, 2] * PZ
         RD_Y = R[1, 0] * PX + R[1, 1] * PY + R[1, 2] * PZ
         RD_Z = R[2, 0] * PX + R[2, 1] * PY + R[2, 2] * PZ
