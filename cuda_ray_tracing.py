@@ -198,73 +198,6 @@ def get_reflection(ray_dir, normal):
 
 
 @cuda.jit(func_or_sig=None, device=True)
-def trace_reflection(ray_origin, ray_dir, spheres, lights, planes):
-    """ Trace the ray and return the R, G, B values"""
-
-    # Ambient light:
-    ambient_intensity = 0.3
-
-    # Start with black
-    R, G, B = (0.0, 0.0, 0.0)
-
-    # Declare the color of the object
-    R_obj, G_obj, B_obj = (0.0, 0.0, 0.0)
-
-    # Check whether the ray hits any of the spheres or planes:
-    intersect_dist, obj_index, obj_type = get_intersection(ray_origin, ray_dir, spheres, planes)
-
-    # If no intersection: return black
-    if obj_type == 404:
-        return 0., 0., 0.
-
-    # Get point of intersection P:
-    P0 = ray_origin[0] + ray_dir[0] * intersect_dist
-    P1 = ray_origin[1] + ray_dir[1] * intersect_dist
-    P2 = ray_origin[2] + ray_dir[2] * intersect_dist
-
-    # Get the color of the object and the surface normal based on what type of object the ray hit:
-    if obj_type == 0:           # (if it's a sphere)
-
-        R_obj, G_obj, B_obj = get_sphere_color(obj_index, spheres)
-        N0, N1, N2 = get_sphere_normal((P0, P1, P2), obj_index, spheres)
-
-    elif obj_type == 1:         # (if it's a plane)
-
-        R_obj, G_obj, B_obj = get_plane_color(obj_index, planes)
-        N0, N1, N2 = get_plane_normal(obj_index, planes)
-
-    else:
-        return 0., 0., 0.
-
-    # Add ambient light
-    R = R + R_obj * ambient_intensity
-    G = G + G_obj * ambient_intensity
-    B = B + B_obj * ambient_intensity
-
-    # >>> 2) SHADOWS AND LAMBERT SHADING:
-
-    # Shift point P along the normal vector to avoid shadow acne:
-    BIAS = 0.001
-    P0 = P0 + BIAS * N0
-    P1 = P1 + BIAS * N1
-    P2 = P2 + BIAS * N2
-
-    # Get unit vector L from intersection point P to the light (only one light for now):
-    L0, L1, L2 = get_vector_to_light((P0, P1, P2), lights)
-
-    # If there is a line of sight to the light source, do the lambert shading:
-    _, _, shadow_type = get_intersection((P0, P1, P2), (L0, L1, L2), spheres, planes)
-    if shadow_type == 404:
-        lambert_intensity = L0 * N0 + L1 * N1 + L2 * N2
-        if lambert_intensity > 0:
-            R = R + R_obj * lambert_intensity
-            G = G + G_obj * lambert_intensity
-            B = B + B_obj * lambert_intensity
-
-    return R, G, B
-
-
-@cuda.jit(func_or_sig=None, device=True)
 def trace(ray_origin, ray_dir, spheres, lights, planes):
     """ Trace the ray and return the R, G, B values"""
 
@@ -339,18 +272,12 @@ def trace(ray_origin, ray_dir, spheres, lights, planes):
     P2 = P2 + BIAS * R2
 
     # Calculate reflected light by casting an additional ray from intersection point P:
-    # (Only 1 reflection for now):
-    # if obj_type == 1:
-    R_refl, G_refl, B_refl = trace_reflection((P0, P1, P2), (R0, R1, R2), spheres, lights, planes)
+    R_refl, G_refl, B_refl = trace_reflection_1((P0, P1, P2), (R0, R1, R2), spheres, lights, planes)
 
     reflection_intensity = 0.5
     R = R + R_refl * reflection_intensity
     G = G + G_refl * reflection_intensity
     B = B + B_refl * reflection_intensity
-
-    # color = (R, G, B)
-    # reflection_point = (P0, P1, P2)
-    # reflection_direction = (R0, R1, R2)
 
     return R, G, B
 
@@ -414,3 +341,155 @@ def ray_dir_kernel(pixel_locations, rays, O, R):
         rays[3, x, y] = RD_X / norm
         rays[4, x, y] = RD_Y / norm
         rays[5, x, y] = RD_Z / norm
+
+
+@cuda.jit(func_or_sig=None, device=True)
+def trace_reflection_1(ray_origin, ray_dir, spheres, lights, planes):
+    """ Trace the ray and return the R, G, B values"""
+
+    # Ambient light:
+    ambient_intensity = 0.3
+
+    # Start with black
+    R, G, B = (0.0, 0.0, 0.0)
+
+    # Declare the color of the object
+    R_obj, G_obj, B_obj = (0.0, 0.0, 0.0)
+
+    # Check whether the ray hits any of the spheres or planes:
+    intersect_dist, obj_index, obj_type = get_intersection(ray_origin, ray_dir, spheres, planes)
+
+    # If no intersection: return black
+    if obj_type == 404:
+        return 0., 0., 0.
+
+    # Get point of intersection P:
+    P0 = ray_origin[0] + ray_dir[0] * intersect_dist
+    P1 = ray_origin[1] + ray_dir[1] * intersect_dist
+    P2 = ray_origin[2] + ray_dir[2] * intersect_dist
+
+    # Get the color of the object and the surface normal based on what type of object the ray hit:
+    if obj_type == 0:           # (if it's a sphere)
+
+        R_obj, G_obj, B_obj = get_sphere_color(obj_index, spheres)
+        N0, N1, N2 = get_sphere_normal((P0, P1, P2), obj_index, spheres)
+
+    elif obj_type == 1:         # (if it's a plane)
+
+        R_obj, G_obj, B_obj = get_plane_color(obj_index, planes)
+        N0, N1, N2 = get_plane_normal(obj_index, planes)
+
+    else:
+        return 0., 0., 0.
+
+    # Add ambient light
+    R = R + R_obj * ambient_intensity
+    G = G + G_obj * ambient_intensity
+    B = B + B_obj * ambient_intensity
+
+    # >>> 2) SHADOWS AND LAMBERT SHADING:
+
+    # Shift point P along the normal vector to avoid shadow acne:
+    BIAS = 0.001
+    P0 = P0 + BIAS * N0
+    P1 = P1 + BIAS * N1
+    P2 = P2 + BIAS * N2
+
+    # Get unit vector L from intersection point P to the light (only one light for now):
+    L0, L1, L2 = get_vector_to_light((P0, P1, P2), lights)
+
+    # If there is a line of sight to the light source, do the lambert shading:
+    _, _, shadow_type = get_intersection((P0, P1, P2), (L0, L1, L2), spheres, planes)
+    if shadow_type == 404:
+        lambert_intensity = L0 * N0 + L1 * N1 + L2 * N2
+        if lambert_intensity > 0:
+            R = R + R_obj * lambert_intensity
+            G = G + G_obj * lambert_intensity
+            B = B + B_obj * lambert_intensity
+
+    # >>> 3) REFLECTIONS:
+
+    # Reflection direction:
+    R0, R1, R2 = get_reflection(ray_dir, (N0, N1, N2))
+
+    # Shift point P along reflection vector to avoid mirror acne:
+    P0 = P0 + BIAS * R0
+    P1 = P1 + BIAS * R1
+    P2 = P2 + BIAS * R2
+
+    # Calculate reflected light by casting an additional ray from intersection point P:
+    R_refl, G_refl, B_refl = trace_reflection_2((P0, P1, P2), (R0, R1, R2), spheres, lights, planes)
+
+    reflection_intensity = 0.5
+    R = R + R_refl * reflection_intensity
+    G = G + G_refl * reflection_intensity
+    B = B + B_refl * reflection_intensity
+
+    return R, G, B
+
+
+@cuda.jit(func_or_sig=None, device=True)
+def trace_reflection_2(ray_origin, ray_dir, spheres, lights, planes):
+    """ Trace the ray and return the R, G, B values"""
+
+    # Ambient light:
+    ambient_intensity = 0.3
+
+    # Start with black
+    R, G, B = (0.0, 0.0, 0.0)
+
+    # Declare the color of the object
+    R_obj, G_obj, B_obj = (0.0, 0.0, 0.0)
+
+    # Check whether the ray hits any of the spheres or planes:
+    intersect_dist, obj_index, obj_type = get_intersection(ray_origin, ray_dir, spheres, planes)
+
+    # If no intersection: return black
+    if obj_type == 404:
+        return 0., 0., 0.
+
+    # Get point of intersection P:
+    P0 = ray_origin[0] + ray_dir[0] * intersect_dist
+    P1 = ray_origin[1] + ray_dir[1] * intersect_dist
+    P2 = ray_origin[2] + ray_dir[2] * intersect_dist
+
+    # Get the color of the object and the surface normal based on what type of object the ray hit:
+    if obj_type == 0:           # (if it's a sphere)
+
+        R_obj, G_obj, B_obj = get_sphere_color(obj_index, spheres)
+        N0, N1, N2 = get_sphere_normal((P0, P1, P2), obj_index, spheres)
+
+    elif obj_type == 1:         # (if it's a plane)
+
+        R_obj, G_obj, B_obj = get_plane_color(obj_index, planes)
+        N0, N1, N2 = get_plane_normal(obj_index, planes)
+
+    else:
+        return 0., 0., 0.
+
+    # Add ambient light
+    R = R + R_obj * ambient_intensity
+    G = G + G_obj * ambient_intensity
+    B = B + B_obj * ambient_intensity
+
+    # >>> 2) SHADOWS AND LAMBERT SHADING:
+
+    # Shift point P along the normal vector to avoid shadow acne:
+    BIAS = 0.001
+    P0 = P0 + BIAS * N0
+    P1 = P1 + BIAS * N1
+    P2 = P2 + BIAS * N2
+
+    # Get unit vector L from intersection point P to the light (only one light for now):
+    L0, L1, L2 = get_vector_to_light((P0, P1, P2), lights)
+
+    # If there is a line of sight to the light source, do the lambert shading:
+    _, _, shadow_type = get_intersection((P0, P1, P2), (L0, L1, L2), spheres, planes)
+    if shadow_type == 404:
+        lambert_intensity = L0 * N0 + L1 * N1 + L2 * N2
+        if lambert_intensity > 0:
+            R = R + R_obj * lambert_intensity
+            G = G + G_obj * lambert_intensity
+            B = B + B_obj * lambert_intensity
+
+    return R, G, B
