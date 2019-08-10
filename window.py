@@ -1,3 +1,5 @@
+import time
+
 import arcade
 from main import generate_rays, generate_scene
 from cuda_ray_tracing import *
@@ -51,6 +53,8 @@ class Scene:
         self.ray_dir()
         self.render()
 
+        self.stream = cuda.stream()
+
     def update_camera(self):
         # Set up the camera:
 
@@ -64,6 +68,7 @@ class Scene:
         self.ray_dir()
 
     def ray_dir(self):
+
         ray_dir_kernel[self.blockspergrid, self.threadsperblock](self.pixel_locations,
                                                                  self.rays,
                                                                  self.origin,
@@ -81,7 +86,9 @@ class Scene:
                                                                 self.ref_depth)
 
     def get_render(self):
-        x = self.A.copy_to_host()
+        start = time.time()
+        x = self.A.copy_to_host(stream=self.stream)
+        end = time.time()
         y = np.zeros(shape=(x.shape[1], x.shape[2], 3))
 
         for i in range(3):
@@ -91,21 +98,9 @@ class Scene:
         image = image.rotate(270)
         image = PIL.ImageOps.mirror(image)
 
+        # print(1000*(end-start), 'ms')
+
         return image
-
-    def iter_pixel_array(self, A):
-        for i in range(A.shape[1]):
-            for j in range(A.shape[2]):
-                yield i, j, A[:, i, j]
-
-    def save_png(self, name):
-
-        result = self.get_render()
-        # Save the image to a .png file:
-        im = PIL.Image.new("RGB", (result.shape[1], result.shape[2]), (255, 255, 255))
-        for x, y, color in self.iter_pixel_array(result):
-            im.putpixel((x, y), tuple(color))
-        im.save(name)
 
 
 class RenderWindow(arcade.Window):
@@ -116,30 +111,29 @@ class RenderWindow(arcade.Window):
         self.set_update_rate(1./30)
         self.buffer = None
 
-    def on_draw(self):
+        self.last_time = time.time()
 
+    def on_draw(self):
         # Draw the background texture
         if self.buffer is not None:
             self.buffer.draw(center_x=self.width//2, center_y=self.height//2,
                              width=self.width, height=self.height)
-
-    def my_load_texture(self):
-        image = self.scene.get_render()
-        result = arcade.Texture('render_result', image)
-
-        return result
+        now = time.time()
+        print(1000*(now - self.last_time), 'ms')
+        self.last_time = now
 
     def update(self, dt):
         # Move camera:
-        self.scene.camera_position[0] += 1
+        # self.scene.camera_position[0] += 1
         # self.scene.camera_euler[2] += 1
 
         # Update rays and render:
-        self.scene.update_camera()
+        # self.scene.update_camera()
         self.scene.render()
 
         # Load result
-        self.buffer = self.my_load_texture()
+        image = self.scene.get_render()
+        self.buffer = arcade.Texture('render_result', image)
 
 
 def main():
