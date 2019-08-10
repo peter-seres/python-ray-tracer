@@ -14,27 +14,28 @@ MAGENTA = [139, 0, 139]
 def generate_scene():
 
     # Light source: (only 1 for now)
-    light = {'origin': [0.0, -2.0, 2.0]}
+    light1 = {'origin': [2.5, -2.0, 3.0]}
+    light2 = {'origin': [2.5,  2.0, 3.0]}
 
     # Spheres:
-    # sphere1 = {'origin': [8., 1.8, 1.], 'radius': 0.8, 'color': RED}
+    sphere1 = {'origin': [5., 0, 1.], 'radius': 1, 'color': RED}
     # sphere2 = {'origin': [5., -1., 1.], 'radius': 0.8, 'color': GREEN}
     # sphere3 = {'origin': [6., -1., -1.], 'radius': 0.8, 'color': BLUE}
     # sphere4 = {'origin': [8., 1., -1.], 'radius': 0.8, 'color': YELLOW}
     # sphere5 = {'origin': [8.5, 2.5, -1.], 'radius': 0.8, 'color': BLUE}
 
-    sphere1 = {'origin': [4.0, 0.0, 0.3], 'radius': 0.995, 'color': RED}
-    sphere2 = {'origin': [-1, 0., 0.3], 'radius': 0.995, 'color': GREEN}
-    sphere3 = {'origin': [-2., 2, 0.6], 'radius': 1.1, 'color': BLUE}
-    sphere4 = {'origin': [4.0, -2.3, 0.5], 'radius': 1.2, 'color': GREEN}
-    sphere5 = {'origin': [2.5, 1.3, -0.3], 'radius': 0.4, 'color': MAGENTA}
+    # sphere1 = {'origin': [4.0, 0.0, 0.3], 'radius': 0.995, 'color': RED}
+    # sphere2 = {'origin': [-1, 0., 0.3], 'radius': 0.995, 'color': GREEN}
+    # sphere3 = {'origin': [-2., 2, 0.6], 'radius': 1.1, 'color': BLUE}
+    # sphere4 = {'origin': [4.0, -2.3, 0.5], 'radius': 1.2, 'color': GREEN}
+    sphere5 = {'origin': [3, 1.3, 0.4], 'radius': 0.4, 'color': MAGENTA}
 
     # Polygons:
-    plane1 = {'origin': [5, 0, -0.7], 'normal': [0, 0, 1], 'color': GREY}
+    plane1 = {'origin': [5, 0, 0], 'normal': [0, 0, 1], 'color': GREY}
 
     # sphere_list = [sphere1, sphere2, sphere3, sphere4, sphere5]
-    sphere_list = [sphere1, sphere2, sphere3, sphere4, sphere5]
-    light_list = [light]
+    sphere_list = [sphere1, sphere5]
+    light_list = [light1, light2]
     plane_list = [plane1]
 
     # Build the sphere data array
@@ -119,7 +120,7 @@ def main(do_render_timing_test=False):
     w = 1920
     h = 1080
 
-    ambient_int, lambert_int, reflection_int = 0.1, 1.0, 0.5
+    ambient_int, lambert_int, reflection_int = 0.1, 0.6, 0.5
 
     # Generate scene:
     spheres_host, light_host, planes_host = generate_scene()
@@ -128,8 +129,12 @@ def main(do_render_timing_test=False):
     planes = cuda.to_device(planes_host)
 
     # Generate rays:
-    camera_rotation = [0, -15, -30]
-    camera_origin_host, camera_rotation_host, pixel_locations_host = generate_rays(w, h, camera_rotation=camera_rotation)
+    # camera_rotation = [0, -10, -180]
+    # camera_position = [8.0, 0, 1.0]
+    camera_rotation = [0, -20, 0]
+    camera_position = [-2, 0, 2.0]
+    camera_origin_host, camera_rotation_host, pixel_locations_host = \
+        generate_rays(w, h, camera_rotation=camera_rotation, camera_position=camera_position)
 
     # Empty rays array to be filled in by the ray-direction kernel
     rays_host = np.zeros((6, w, h), dtype=np.float32)

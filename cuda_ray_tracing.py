@@ -134,9 +134,9 @@ def get_plane_color(index, planes):
 
 
 @cuda.jit(device=True)
-def get_vector_to_light(P, lights):
+def get_vector_to_light(P, lights, light_index):
     """ Returns the unit vector to a light from point P"""
-    light_index = 0
+    # light_index = 0
     L0 = lights[0, light_index] - P[0]
     L1 = lights[1, light_index] - P[1]
     L2 = lights[2, light_index] - P[2]
@@ -241,22 +241,23 @@ def trace(ray_origin, ray_dir, spheres, lights, planes, ambient_int, lambert_int
     # >>> 2) SHADOWS AND LAMBERT SHADING:
 
     # Shift point P along the normal vector to avoid shadow acne:
-    BIAS = 0.001
+    BIAS = 0.0002
     P0 = P0 + BIAS * N0
     P1 = P1 + BIAS * N1
     P2 = P2 + BIAS * N2
 
-    # Get unit vector L from intersection point P to the light (only one light for now):
-    L0, L1, L2 = get_vector_to_light((P0, P1, P2), lights)
+    for light_index in range(lights.shape[1]):
+        # Get unit vector L from intersection point P to the light (only one light for now):
+        L0, L1, L2 = get_vector_to_light((P0, P1, P2), lights, light_index)
 
-    # If there is a line of sight to the light source, do the lambert shading:
-    _, _, shadow_type = get_intersection((P0, P1, P2), (L0, L1, L2), spheres, planes)
-    if shadow_type == 404:
-        lambert_intensity = L0 * N0 + L1 * N1 + L2 * N2
-        if lambert_intensity > 0:
-            R = R + R_obj * lambert_intensity * lambert_int
-            G = G + G_obj * lambert_intensity * lambert_int
-            B = B + B_obj * lambert_intensity * lambert_int
+        # If there is a line of sight to the light source, do the lambert shading:
+        _, _, shadow_type = get_intersection((P0, P1, P2), (L0, L1, L2), spheres, planes)
+        if shadow_type == 404:
+            lambert_intensity = L0 * N0 + L1 * N1 + L2 * N2
+            if lambert_intensity > 0:
+                R = R + R_obj * lambert_intensity * lambert_int
+                G = G + G_obj * lambert_intensity * lambert_int
+                B = B + B_obj * lambert_intensity * lambert_int
 
     # >>> 3) REFLECTIONS:
 
@@ -267,14 +268,6 @@ def trace(ray_origin, ray_dir, spheres, lights, planes, ambient_int, lambert_int
     P0 = P0 + BIAS * R0
     P1 = P1 + BIAS * R1
     P2 = P2 + BIAS * R2
-
-    # # Calculate reflected light by casting an additional ray from intersection point P:
-    # R_refl, G_refl, B_refl = trace_reflection_1((P0, P1, P2), (R0, R1, R2), spheres, lights, planes,
-    #                                             ambient_int, lambert_int, reflection_int)
-    #
-    # R = R + R_refl * reflection_int
-    # G = G + G_refl * reflection_int
-    # B = B + B_refl * reflection_int
 
     color = (R, G, B)
     POINT = (P0, P1, P2)
