@@ -12,32 +12,49 @@ GREY = [125, 125, 125]
 MAGENTA = [139, 0, 139]
 
 
-def generate_scene():
-
-    # Light source: (only 1 for now)
+def scene_factory():
+    # Light sources:
     light1 = {'origin': [2.5, -2.0, 3.0]}
     light2 = {'origin': [2.5,  2.0, 3.0]}
-
-    # Spheres:
-    sphere1 = {'origin': [5., 0, 1.], 'radius': 1, 'color': RED}
-    # sphere2 = {'origin': [5., -1., 1.], 'radius': 0.8, 'color': GREEN}
-    # sphere3 = {'origin': [6., -1., -1.], 'radius': 0.8, 'color': BLUE}
-    # sphere4 = {'origin': [8., 1., -1.], 'radius': 0.8, 'color': YELLOW}
-    # sphere5 = {'origin': [8.5, 2.5, -1.], 'radius': 0.8, 'color': BLUE}
-
-    # sphere1 = {'origin': [4.0, 0.0, 0.3], 'radius': 0.995, 'color': RED}
-    # sphere2 = {'origin': [-1, 0., 0.3], 'radius': 0.995, 'color': GREEN}
-    # sphere3 = {'origin': [-2., 2, 0.6], 'radius': 1.1, 'color': BLUE}
-    # sphere4 = {'origin': [4.0, -2.3, 0.5], 'radius': 1.2, 'color': GREEN}
-    sphere5 = {'origin': [3, 1.3, 0.4], 'radius': 0.4, 'color': MAGENTA}
-
-    # Polygons:
-    plane1 = {'origin': [5, 0, 0], 'normal': [0, 0, 1], 'color': GREY}
-
-    # sphere_list = [sphere1, sphere2, sphere3, sphere4, sphere5]
-    sphere_list = [sphere1, sphere5]
     light_list = [light1, light2]
+
+    # Horizontal plane:
+    plane1 = {'origin': [5, 0, 0], 'normal': [0, 0, 1], 'color': GREY}
     plane_list = [plane1]
+
+    # Sphere generator:
+    from arcade import color
+
+    # Number of spheres:
+    N_spheres_x = 5
+    N_spheres_y = 5
+
+    # Sphere size distribution:
+    R_mean = 1.0
+    R_std = 0.9
+    R_max = 1.7
+    R_min = 0.1
+
+    # Location settings:
+    dist = 1.01 * R_max * 2
+    sphere_list = []
+
+    for x in np.arange(0, dist * N_spheres_x, dist):
+        for y in np.arange(-dist * N_spheres_y / 2, dist * N_spheres_y / 2, dist):
+
+            random_color = list(getattr(color, np.random.choice(list(dir(color)))))     # Choose a random color from arcade.color
+            radius = max(min(np.random.normal(R_mean, R_std), R_max), R_min)            # Generate a normal distribution of radii
+            sphere = {'origin': [x, y, radius*1.001], 'radius': radius, 'color': random_color}
+
+            sphere_list.append(sphere)
+
+            print(x, y)
+            print(sphere['color'])
+
+    return sphere_list, light_list, plane_list
+
+
+def generate_scene(sphere_list, light_list, plane_list):
 
     # Build the sphere data array
     spheres = np.zeros((7, len(sphere_list)), dtype=np.float32)
@@ -45,6 +62,8 @@ def generate_scene():
         spheres[0:3, i]    = np.array(s['origin'])
         spheres[3, i]      = s['radius']
         spheres[4:7, i]    = np.array(s['color'])
+
+    # print(spheres)
 
     # Build the sphere data array
     lights = np.zeros((3, len(light_list)), dtype=np.float32)
@@ -124,14 +143,12 @@ def main(do_render_timing_test=False):
     ambient_int, lambert_int, reflection_int = 0.1, 0.6, 0.5
 
     # Generate scene:
-    spheres_host, light_host, planes_host = generate_scene()
+    sphere_list, light_list, plane_list = scene_factory()
+    spheres_host, light_host, planes_host = generate_scene(sphere_list, light_list, plane_list)
     spheres = cuda.to_device(spheres_host)
     light = cuda.to_device(light_host)
     planes = cuda.to_device(planes_host)
 
-    # Generate rays:
-    # camera_rotation = [0, -10, -180]
-    # camera_position = [8.0, 0, 1.0]
     camera_rotation = [0, -20, 0]
     camera_position = [-2, 0, 2.0]
     camera_origin_host, camera_rotation_host, pixel_locations_host = \
@@ -181,13 +198,13 @@ def main(do_render_timing_test=False):
     result = A.copy_to_host()
 
     image, x, y = get_render(result)
-    image.save('get_render_output.png')
+    image.save('output.png')
 
     # Save the image to a .png file:
     # name = 'output.png'
     # print(f'Saving image to {name}')
     # im = Image.new("RGB", (result.shape[1], result.shape[2]), (255, 255, 255))
-    # for x, y, color in iter_pixel_array(result):
+    # for x, y, color in ier_pixel_array(result):
     #     im.putpixel((x, y), tuple(color))
     # im.save(name)
 
@@ -209,4 +226,4 @@ def get_render(x):
 
 
 if __name__ == '__main__':
-    x, y = main(do_render_timing_test=False)
+    main(do_render_timing_test=False)

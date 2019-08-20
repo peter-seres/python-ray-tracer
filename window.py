@@ -1,5 +1,4 @@
 import time
-
 import arcade
 from main import generate_rays, generate_scene, rotation_x, rotation_y, rotation_z
 from cuda_ray_tracing import *
@@ -8,8 +7,7 @@ import PIL.Image
 import PIL.ImageOps
 import threading
 
-
-UPDATE_RATE = 1./30
+UPDATE_RATE = 1./60
 
 
 class Renderer:
@@ -61,10 +59,10 @@ class Renderer:
 
         self.image = None
         self.updated = False
+        self.texture = None
 
     def update_camera_position(self):
         self.origin = cuda.to_device(self.camera_position)
-        # self.rays = cuda.to_device(np.zeros((6, self.width, self.height), dtype=np.float32))
         self.ray_dir()
 
     def update_camera_rotation(self):
@@ -72,28 +70,17 @@ class Renderer:
         RZ = rotation_z(self.camera_euler[2])
         RY = rotation_y(self.camera_euler[1])
 
-        ROT = np.matmul(RY, RZ)
+        ROT = np.matmul(RZ, RY)
 
         self.camera_R = cuda.to_device(ROT)
         self.ray_dir()
 
     def ray_dir(self):
-
-        ray_dir_kernel[self.blockspergrid, self.threadsperblock](self.pixel_locations,
-                                                                 self.rays,
-                                                                 self.origin,
-                                                                 self.camera_R)
+        ray_dir_kernel[self.blockspergrid, self.threadsperblock](self.pixel_locations, self.rays, self.origin, self.camera_R)
 
     def render(self):
-        render_kernel[self.blockspergrid, self.threadsperblock](self.A,
-                                                                self.rays,
-                                                                self.spheres,
-                                                                self.lights,
-                                                                self.planes,
-                                                                self.ambient,
-                                                                self.lambert,
-                                                                self.reflect,
-                                                                self.ref_depth)
+        render_kernel[self.blockspergrid, self.threadsperblock](self.A, self.rays, self.spheres, self.lights, self.planes,
+                                                                self.ambient, self.lambert, self.reflect, self.ref_depth)
 
     def get_render(self):
         x = self.A.copy_to_host(stream=self.stream)
@@ -108,7 +95,7 @@ class Renderer:
 
         return image
 
-    def render_loop(self):
+    def render_loop(self, arcade_window):
         last_time = time.time()
         while True:
             now = time.time()
@@ -117,11 +104,9 @@ class Renderer:
             if dt < UPDATE_RATE:
                 time.sleep(UPDATE_RATE-dt)
 
-            # self.ray_dir()
             self.render()
             self.image = self.get_render()
-
-            self.updated = True
+            self.texture = arcade.Texture('result', self.image)
 
 
 class RenderWindow(arcade.Window):
@@ -129,28 +114,38 @@ class RenderWindow(arcade.Window):
         super().__init__(width=width, height=height)
 
         self.renderer = renderer
-        self.set_update_rate(1./5)
-        self.buffer = None
+        self.set_update_rate(1./30)
+        self._buffer = None
 
         self.FPS = 0.0
 
+        self.started = False
+
     def on_draw(self):
         # Draw the background texture
-        if self.buffer is not None:
-            draw_start = time.time()
-            self.buffer.draw(center_x=self.width//2, center_y=self.height//2,
-                             width=self.width, height=self.height)
-            draw_end = time.time()
+        if self.started:
+            # print('do i get here?')
+            from pyglet.gl import GLException
+            try:
+                self._buffer.draw(center_x=self.width//2, center_y=self.height//2,
+                                  width=self.width, height=self.height)
+            except GLException:
+                print('whoopsie')
 
             arcade.draw_text(text='FPS: '+'{:.1f}'.format(self.FPS), start_x=30, start_y=self.height-35,
                              color=arcade.color.WHITE, font_size=22)
+        else:
+            arcade.draw_rectangle_filled(center_x=self.width//2, center_y=self.height//2,
+                                         width=self.width, height=self.height, color=arcade.color.BLUE)
+
+    def set_buffer(self, texture):
+        self._buffer = texture
+        self.started = True
 
     def update(self, dt):
         self.FPS = (1 / dt)
-        # Load result
-        if self.renderer.updated:
-            self.buffer = arcade.Texture('render_result', self.renderer.image)
-            self.renderer.update = False
+
+        self.set_buffer(self.renderer.texture)
 
     def on_key_press(self, symbol, mod):
 
@@ -204,10 +199,12 @@ def main():
 
     # Ray tracing renderer:
     renderer = Renderer(width=w, height=h)
-    thread_get = threading.Thread(target=renderer.render_loop, args=())
 
     # Arcade GUI window
     window = RenderWindow(width=w, height=h, renderer=renderer)
+
+    # Loop for rendering on a separate thread
+    thread_get = threading.Thread(target=renderer.render_loop, args=(window, ), daemon=True)
 
     # Start the renderer Loop thread
     thread_get.start()
