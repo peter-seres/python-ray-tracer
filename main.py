@@ -12,6 +12,30 @@ GREY = [125, 125, 125]
 MAGENTA = [139, 0, 139]
 
 
+def custom_scene():
+    # Light sources:
+    light1 = {'origin': [2.5, -2.0, 3.0]}
+    light2 = {'origin': [2.5,  2.0, 3.0]}
+    light_list = [light1, light2]
+
+    # Horizontal plane:
+    plane1 = {'origin': [5, 0, 0], 'normal': [0, 0, 1], 'color': GREY}
+    plane_list = [plane1]
+
+    # sphere list
+
+    sphere1 = sphere = {'origin': [2.2, 0.3, 1.0], 'radius': 1.0, 'color': RED}
+    sphere2 = sphere = {'origin': [0.6, 0.7, 0.4], 'radius': 0.4, 'color': BLUE}
+    sphere3 = sphere = {'origin': [0.6, -0.8, 0.5], 'radius': 0.5, 'color': YELLOW}
+    sphere4 = sphere = {'origin': [-1.2, 0.2, 0.5], 'radius': 0.5, 'color': MAGENTA}
+    sphere5 = sphere = {'origin': [-1.7, -0.5, 0.3], 'radius': 0.3, 'color': GREEN}
+    sphere6 = sphere = {'origin': [-2.0, 1.31, 1.3], 'radius': 1.3, 'color': RED}
+
+    sphere_list = [sphere1, sphere2, sphere3, sphere4, sphere5, sphere6]
+
+    return sphere_list, light_list, plane_list
+
+
 def scene_factory():
     # Light sources:
     light1 = {'origin': [2.5, -2.0, 3.0]}
@@ -143,7 +167,10 @@ def main(do_render_timing_test=False):
     ambient_int, lambert_int, reflection_int = 0.1, 0.6, 0.5
 
     # Generate scene:
-    sphere_list, light_list, plane_list = scene_factory()
+    # sphere_list, light_list, plane_list = scene_factory()
+
+    sphere_list, light_list, plane_list = custom_scene()
+
     spheres_host, light_host, planes_host = generate_scene(sphere_list, light_list, plane_list)
     spheres = cuda.to_device(spheres_host)
     light = cuda.to_device(light_host)
@@ -180,17 +207,18 @@ def main(do_render_timing_test=False):
     print(f'Compile+generate time: {1000*(end-start)} ms')
 
     # Compile + render it:
-    print('Compiling and running render')
+    print('Compiling...')
     start = time.time()
-    render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, ambient_int, lambert_int, reflection_int, 4)
+    render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, ambient_int, lambert_int, reflection_int, 1)
     end = time.time()
-    print(f'Compile + render time: {1000*(end-start)} ms')
+    print(f'Compile time: {1000*(end-start)} ms')
 
     # Render it: (run it once more to measure render only time
     if do_render_timing_test:
         print(f'Rendering...')
         start = time.time()
-        render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, ambient_int, lambert_int, reflection_int, 4)
+        render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, ambient_int, lambert_int,
+                                                      reflection_int, 10)
         end = time.time()
         print(f'Render time: {1000*(end-start)} ms')
 
@@ -226,4 +254,4 @@ def get_render(x):
 
 
 if __name__ == '__main__':
-    main(do_render_timing_test=False)
+    main(do_render_timing_test=True)
