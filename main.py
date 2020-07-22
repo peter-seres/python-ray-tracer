@@ -1,8 +1,9 @@
-import numpy as np
-from cuda_ray_tracing import *
 import time
-import PIL.Image
-import PIL.ImageOps
+import numpy as np
+from numba import cuda
+from cuda_ray_tracing import render_kernel, ray_dir_kernel
+from PIL import Image, ImageOps
+
 
 RED = [255, 70, 70]
 GREEN = [70, 255, 70]
@@ -12,7 +13,7 @@ GREY = [125, 125, 125]
 MAGENTA = [139, 0, 139]
 
 
-def custom_scene():
+def custom_scene() -> (list, list, list):
     # Light sources:
     light1 = {'origin': [2.5, -2.0, 3.0]}
     light2 = {'origin': [2.5,  2.0, 3.0]}
@@ -36,49 +37,8 @@ def custom_scene():
     return sphere_list, light_list, plane_list
 
 
-def scene_factory():
-    # Light sources:
-    light1 = {'origin': [2.5, -2.0, 3.0]}
-    light2 = {'origin': [2.5,  2.0, 3.0]}
-    light_list = [light1, light2]
-
-    # Horizontal plane:
-    plane1 = {'origin': [5, 0, 0], 'normal': [0, 0, 1], 'color': GREY}
-    plane_list = [plane1]
-
-    # Sphere generator:
-    from arcade import color
-
-    # Number of spheres:
-    N_spheres_x = 5
-    N_spheres_y = 5
-
-    # Sphere size distribution:
-    R_mean = 1.0
-    R_std = 0.9
-    R_max = 1.7
-    R_min = 0.1
-
-    # Location settings:
-    dist = 1.01 * R_max * 2
-    sphere_list = []
-
-    for x in np.arange(0, dist * N_spheres_x, dist):
-        for y in np.arange(-dist * N_spheres_y / 2, dist * N_spheres_y / 2, dist):
-
-            random_color = list(getattr(color, np.random.choice(list(dir(color)))))     # Choose a random color from arcade.color
-            radius = max(min(np.random.normal(R_mean, R_std), R_max), R_min)            # Generate a normal distribution of radii
-            sphere = {'origin': [x, y, radius*1.001], 'radius': radius, 'color': random_color}
-
-            sphere_list.append(sphere)
-
-            print(x, y)
-            print(sphere['color'])
-
-    return sphere_list, light_list, plane_list
-
-
-def generate_scene(sphere_list, light_list, plane_list):
+def generate_scene(sphere_list: list, light_list: list, plane_list: list) -> (np.ndarray, np.ndarray, np.ndarray):
+    """ Takes scene object dictionaries and converts them to a numpy array format. """
 
     # Build the sphere data array
     spheres = np.zeros((7, len(sphere_list)), dtype=np.float32)
@@ -87,14 +47,12 @@ def generate_scene(sphere_list, light_list, plane_list):
         spheres[3, i]      = s['radius']
         spheres[4:7, i]    = np.array(s['color'])
 
-    # print(spheres)
-
-    # Build the sphere data array
+    # Build the light data array
     lights = np.zeros((3, len(light_list)), dtype=np.float32)
     for i, lig in enumerate(light_list):
         lights[0:3, i]    = np.array(lig['origin'])
 
-    # Build the polygon data array
+    # Build the plane data array
     planes = np.zeros((9, len(plane_list)), dtype=np.float32)
     for i, p in enumerate(plane_list):
         planes[0:3, i]    = np.array(p['origin'])
@@ -104,8 +62,9 @@ def generate_scene(sphere_list, light_list, plane_list):
     return spheres, lights, planes
 
 
-def rotation_z(psi):
+def rotation_z(psi: float) -> np.ndarray:
     """ Return the Rotation matrix around the Z-axis for psi in degrees. """
+
     psi = np.deg2rad(psi)
     R_rot = np.array([[np.cos(psi), -np.sin(psi), 0],
                       [np.sin(psi), np.cos(psi), 0],
@@ -113,8 +72,9 @@ def rotation_z(psi):
     return R_rot
 
 
-def rotation_y(theta):
+def rotation_y(theta: float) -> np.ndarray:
     """ Return the Rotation matrix around the Y-axis for theta in degrees. """
+
     theta = np.deg2rad(theta)
     R_rot = np.array([[np.cos(theta), 0, -np.sin(theta)],
                       [0,             1,               0],
@@ -122,8 +82,9 @@ def rotation_y(theta):
     return R_rot
 
 
-def rotation_x(phi):
+def rotation_x(phi: float) -> np.ndarray:
     """ Return the Rotation matrix around the X-axis for phi in degrees. """
+
     phi = np.deg2rad(phi)
     R_rot = np.array([[1, 0, 0],
                       [0, np.cos(phi), -np.sin(phi)],
@@ -131,7 +92,9 @@ def rotation_x(phi):
     return R_rot
 
 
-def generate_rays(width, height, camera_rotation=None, field_of_view=45, camera_position=None):
+def generate_rays(width: int, height: int, camera_rotation: list = None, field_of_view: int = 45, camera_position: list = None) -> (list, np.ndarray, np.ndarray):
+    """ Generates the camera position, the camera attitude rotation matrix and the pixel locations on the camera plane."""
+
     if camera_position is None:
         camera_position = [0, 0, 0]                                                 # Default at origin
 
@@ -154,28 +117,40 @@ def generate_rays(width, height, camera_rotation=None, field_of_view=45, camera_
 
 
 def iter_pixel_array(A):
+    """ Generator to iterate through each pixel. """
+
     for x in range(A.shape[1]):
         for y in range(A.shape[2]):
             yield x, y, A[:, x, y]
 
 
 def main(do_render_timing_test=False):
-    # Resolution settings:
+
+    """ Entry point:
+
+    1) Set up render parameters: resolution, shader parameters
+    2) Set up scene: spheres, planes and lights
+    3) Set up camera rays.
+
+    """
+
+    # 1) Render and shader settings:
     w = 1000
     h = 1000
-
     ambient_int, lambert_int, reflection_int = 0.1, 0.6, 0.5
 
-    # Generate scene:
-    # sphere_list, light_list, plane_list = scene_factory()
-
+    # 2) Generate scene:
     sphere_list, light_list, plane_list = custom_scene()
 
+    # Generate the numpy arrays:
     spheres_host, light_host, planes_host = generate_scene(sphere_list, light_list, plane_list)
+
+    # Send the numpy arrays to GPU memory:
     spheres = cuda.to_device(spheres_host)
     light = cuda.to_device(light_host)
     planes = cuda.to_device(planes_host)
 
+    # 3) Set up camera and rays
     camera_rotation = [0, -20, 0]
     camera_position = [-2, 0, 2.0]
     camera_origin_host, camera_rotation_host, pixel_locations_host = \
@@ -200,21 +175,22 @@ def main(do_render_timing_test=False):
     blockspergrid = (blockspergrid_x, blockspergrid_y)
 
     # Rays it:
-    print('Generating ray directions')
+    print('Generating ray directions:')
     start = time.time()
     ray_dir_kernel[blockspergrid, threadsperblock](pixel_locations, rays, origin, camera_rotation)
     end = time.time()
-    print(f'Compile+generate time: {1000*(end-start)} ms')
+    print(f'Compile + generate time: {1000*(end-start)} ms')
 
     # Compile + render it:
     print('Compiling...')
     start = time.time()
     render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, ambient_int, lambert_int, reflection_int, 1)
     end = time.time()
-    print(f'Compile time: {1000*(end-start)} ms')
+    print(f'Compile + run time: {1000*(end-start)} ms')
 
     # Render it: (run it once more to measure render only time
     if do_render_timing_test:
+
         print(f'Rendering...')
         start = time.time()
         render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, ambient_int, lambert_int,
@@ -224,33 +200,27 @@ def main(do_render_timing_test=False):
 
     # Get the pixel array from GPU memory.
     result = A.copy_to_host()
-
-    image, x, y = get_render(result)
+    image = get_render(result)
     image.save('output.png')
 
-    # Save the image to a .png file:
-    # name = 'output.png'
-    # print(f'Saving image to {name}')
-    # im = Image.new("RGB", (result.shape[1], result.shape[2]), (255, 255, 255))
-    # for x, y, color in ier_pixel_array(result):
-    #     im.putpixel((x, y), tuple(color))
-    # im.save(name)
-
-    return x, y
+    return 0
 
 
-def get_render(x):
+# noinspection DuplicatedCode
+def get_render(x: np.ndarray) -> Image:
 
+    """ Takes numpy array x and converts it to RGB image. """
     y = np.zeros(shape=(x.shape[1], x.shape[2], 3))
 
+    # Rearrange the coordinates:
     for i in range(3):
         y[:, :, i] = x[i, :, :]
 
-    image = PIL.Image.fromarray(y.astype(np.uint8), mode='RGB')
+    image = Image.fromarray(y.astype(np.uint8), mode='RGB')
     image = image.rotate(270)
-    image = PIL.ImageOps.mirror(image)
+    image = ImageOps.mirror(image)
 
-    return image, x, y
+    return image
 
 
 if __name__ == '__main__':

@@ -1,10 +1,13 @@
 from numba import cuda
 import math
 
+""" This module defines all JIT compiled functions for the CUDA kernel with no numpy support. """
+
 
 @cuda.jit(device=True)
 def clip(color):
     """ This function takes the resulting RGB float and clips it to an 8bit integer."""
+
     return min(max(0, int(round(color))), 255)
 
 
@@ -50,7 +53,7 @@ def intersect_ray_sphere(ray_origin, ray_dir, sphere_origin, sphere_radius):
 
 @cuda.jit(device=True)
 def intersect_ray_plane(ray_origin, ray_dir, plane_origin, plane_normal):
-    """ Returns the distance to the plane. Returns -999.0 if does not intersect. """
+    """ Returns the distance to the plane. Returns -999.9 if does not intersect. """
 
     # Threshold for parallel planes:
     EPS = 0.001
@@ -65,7 +68,7 @@ def intersect_ray_plane(ray_origin, ray_dir, plane_origin, plane_normal):
 
     # Check if ray is not parallel with plane:
     if abs(denom) < EPS:
-        return -999.0
+        return -999.9
 
     # LP: Vector from ray to plane center
     LP_0 = plane_origin[0] - ray_origin[0]
@@ -118,6 +121,7 @@ def get_intersection(ray_origin, ray_dir, spheres, planes):
 @cuda.jit(device=True)
 def get_sphere_color(index, spheres):
     """ Returns the color tuple of a sphere."""
+
     R = spheres[4, index]
     G = spheres[5, index]
     B = spheres[6, index]
@@ -127,6 +131,7 @@ def get_sphere_color(index, spheres):
 @cuda.jit(device=True)
 def get_plane_color(index, planes):
     """ Returns the color tuple of a plane."""
+
     R = planes[6, index]
     G = planes[7, index]
     B = planes[8, index]
@@ -136,7 +141,7 @@ def get_plane_color(index, planes):
 @cuda.jit(device=True)
 def get_vector_to_light(P, lights, light_index):
     """ Returns the unit vector to a light from point P"""
-    # light_index = 0
+
     L0 = lights[0, light_index] - P[0]
     L1 = lights[1, light_index] - P[1]
     L2 = lights[2, light_index] - P[2]
@@ -150,6 +155,7 @@ def get_vector_to_light(P, lights, light_index):
 @cuda.jit(device=True)
 def get_sphere_normal(P, sphere_index, spheres):
     """ Returns the unit normal vector on the surface of a sphere at point P. """
+
     N0 = P[0] - spheres[0, sphere_index]
     N1 = P[1] - spheres[1, sphere_index]
     N2 = P[2] - spheres[2, sphere_index]
@@ -163,6 +169,7 @@ def get_sphere_normal(P, sphere_index, spheres):
 @cuda.jit(device=True)
 def get_plane_normal(plane_index, planes):
     """ Returns the unit normal vector on the surface of a normal at point P. """
+
     N0 = planes[3, plane_index]
     N1 = planes[4, plane_index]
     N2 = planes[5, plane_index]
@@ -176,6 +183,7 @@ def get_plane_normal(plane_index, planes):
 @cuda.jit(device=True)
 def get_reflection(ray_dir, normal):
     """ Returns the unit reflection direction vector."""
+
     D0 = ray_dir[0]
     D1 = ray_dir[1]
     D2 = ray_dir[2]
@@ -207,7 +215,7 @@ def trace(ray_origin, ray_dir, spheres, lights, planes, ambient_int, lambert_int
     # Declare the color of the object
     R_obj, G_obj, B_obj = (0.0, 0.0, 0.0)
 
-    # Check whether the ray hits any of the spheres or planes:
+    # >>> 1) Check whether the ray hits any of the spheres or planes:
     intersect_dist, obj_index, obj_type = get_intersection(ray_origin, ray_dir, spheres, planes)
 
     # If no intersection: return black
@@ -230,7 +238,7 @@ def trace(ray_origin, ray_dir, spheres, lights, planes, ambient_int, lambert_int
         R_obj, G_obj, B_obj = get_plane_color(obj_index, planes)
         N0, N1, N2 = get_plane_normal(obj_index, planes)
 
-    else:
+    else:                       # (if ray does not intersect)
         return (0., 0., 0.), (404., 404., 404.), (404, 404., 404.)
 
     # Add ambient light
@@ -247,13 +255,17 @@ def trace(ray_origin, ray_dir, spheres, lights, planes, ambient_int, lambert_int
     P2 = P2 + BIAS * N2
 
     for light_index in range(lights.shape[1]):
-        # Get unit vector L from intersection point P to the light (only one light for now):
+
+        # Get unit vector L from intersection point P to the light:
         L0, L1, L2 = get_vector_to_light((P0, P1, P2), lights, light_index)
 
         # If there is a line of sight to the light source, do the lambert shading:
         _, _, shadow_type = get_intersection((P0, P1, P2), (L0, L1, L2), spheres, planes)
+
         if shadow_type == 404:
+
             lambert_intensity = L0 * N0 + L1 * N1 + L2 * N2
+
             if lambert_intensity > 0:
                 R = R + R_obj * lambert_intensity * lambert_int
                 G = G + G_obj * lambert_intensity * lambert_int
@@ -279,6 +291,7 @@ def trace(ray_origin, ray_dir, spheres, lights, planes, ambient_int, lambert_int
 @cuda.jit()
 def render_kernel(pixel_array, rays, spheres, lights, planes, ambient_int, lambert_int, reflection_int, depth):
     """ This kernel render one pixel by casting a ray from a specific pixel location."""
+
     # Location of pixel
     x, y = cuda.grid(2)
 
@@ -300,7 +313,7 @@ def render_kernel(pixel_array, rays, spheres, lights, planes, ambient_int, lambe
 
         R, G, B = RGB
 
-        # Run the reflection
+        # Run the reflection "depth" amount of times:
         for i in range(depth):
             if POINT[0] == 404. and POINT[1] == 404. and POINT[2] == 404.:
                 continue
