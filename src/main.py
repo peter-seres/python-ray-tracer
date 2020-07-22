@@ -1,7 +1,7 @@
 import time
 import numpy as np
 from numba import cuda
-from cuda_ray_tracing import render_kernel, ray_dir_kernel
+from src.cuda_ray_tracing import render_kernel, ray_dir_kernel
 from PIL import Image, ImageOps
 
 
