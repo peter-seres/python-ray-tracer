@@ -1,16 +1,9 @@
 import time
 import numpy as np
 from numba import cuda
-from src.cuda_ray_tracing import render_kernel, ray_dir_kernel
+from ray_tracing import render_kernel, ray_dir_kernel
 from PIL import Image, ImageOps
-
-
-RED = [255, 70, 70]
-GREEN = [70, 255, 70]
-BLUE = [70, 70, 255]
-YELLOW = [255, 255, 70]
-GREY = [125, 125, 125]
-MAGENTA = [139, 0, 139]
+from scene.colors import *
 
 
 def custom_scene() -> (list, list, list):
@@ -116,14 +109,6 @@ def generate_rays(width: int, height: int, camera_rotation: list = None, field_o
     return camera_position, R, pixel_locations
 
 
-def iter_pixel_array(A):
-    """ Generator to iterate through each pixel. """
-
-    for x in range(A.shape[1]):
-        for y in range(A.shape[2]):
-            yield x, y, A[:, x, y]
-
-
 def main(do_render_timing_test=False):
 
     """ Entry point:
@@ -155,40 +140,39 @@ def main(do_render_timing_test=False):
     camera_position = [-2, 0, 2.0]
     camera_origin_host, camera_rotation_host, pixel_locations_host = \
         generate_rays(w, h, camera_rotation=camera_rotation, camera_position=camera_position)
-
-    # Empty rays array to be filled in by the ray-direction kernel
     rays_host = np.zeros((6, w, h), dtype=np.float32)
 
-    # Send data needed to get the ray direction kernel running to the device:
+    # 4) Memory Allocation on the GPU:
+
     origin = cuda.to_device(camera_origin_host)
     camera_rotation = cuda.to_device(camera_rotation_host)
     pixel_locations = cuda.to_device(pixel_locations_host)
     rays = cuda.to_device(rays_host)
 
-    # Make an empty pixel array:
+    # Empty pixel array:
     A = cuda.to_device(np.zeros((3, w, h), dtype=np.uint8))
 
-    # Setup the cuda kernel grid:
+    # 5) Setup the cuda kernel grid:
     threadsperblock = (16, 16)
     blockspergrid_x = int(np.ceil(A.shape[1] / threadsperblock[0]))
     blockspergrid_y = int(np.ceil(A.shape[2] / threadsperblock[1]))
     blockspergrid = (blockspergrid_x, blockspergrid_y)
 
-    # Rays it:
+    # Calculate ray directions:
     print('Generating ray directions:')
     start = time.time()
     ray_dir_kernel[blockspergrid, threadsperblock](pixel_locations, rays, origin, camera_rotation)
     end = time.time()
     print(f'Compile + generate time: {1000*(end-start)} ms')
 
-    # Compile + render it:
+    # JIT Compile + render it:
     print('Compiling...')
     start = time.time()
     render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, ambient_int, lambert_int, reflection_int, 1)
     end = time.time()
     print(f'Compile + run time: {1000*(end-start)} ms')
 
-    # Render it: (run it once more to measure render only time
+    # Render it: (run it once more to measure render only time)
     if do_render_timing_test:
 
         print(f'Rendering...')
@@ -201,26 +185,24 @@ def main(do_render_timing_test=False):
     # Get the pixel array from GPU memory.
     result = A.copy_to_host()
     image = get_render(result)
-    image.save('../output/render.png')
+    image.save('../output/678.png')
 
     return 0
 
 
-# noinspection DuplicatedCode
 def get_render(x: np.ndarray) -> Image:
-
     """ Takes numpy array x and converts it to RGB image. """
+
     y = np.zeros(shape=(x.shape[1], x.shape[2], 3))
 
     # Rearrange the coordinates:
     for i in range(3):
         y[:, :, i] = x[i, :, :]
 
-    image = Image.fromarray(y.astype(np.uint8), mode='RGB')
-    image = image.rotate(270)
-    image = ImageOps.mirror(image)
+    im = Image.fromarray(y.astype(np.uint8), mode='RGB')
+    im = ImageOps.mirror(im.rotate(270))
 
-    return image
+    return im
 
 
 if __name__ == '__main__':
