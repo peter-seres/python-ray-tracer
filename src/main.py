@@ -201,7 +201,7 @@ def main(do_render_timing_test=False):
     # Get the pixel array from GPU memory.
     result = A.copy_to_host()
     image = get_render(result)
-    image.save('output.png')
+    image.save('../output/render.png')
 
     return 0
 
@@ -224,4 +224,4 @@ def get_render(x: np.ndarray) -> Image:
 
 
 if __name__ == '__main__':
-    main(do_render_timing_test=True)
+    main(do_render_timing_test=False)
