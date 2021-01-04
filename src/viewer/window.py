@@ -1,7 +1,7 @@
 # import time
 # import arcade
 # from src.main import generate_rays, generate_scene, rotation_y, rotation_z
-# from src.cuda_ray_tracing import *
+# from ray_tracing import *
 # import numpy as np
 # import PIL.Image
 # import PIL.ImageOps

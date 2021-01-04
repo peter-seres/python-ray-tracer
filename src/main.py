@@ -4,6 +4,7 @@ from numba import cuda
 from ray_tracing import render_kernel, ray_dir_kernel
 from PIL import Image, ImageOps
 from scene.colors import *
+from scene.rotation import euler_rotation
 
 
 def custom_scene() -> (list, list, list):
@@ -17,7 +18,6 @@ def custom_scene() -> (list, list, list):
     plane_list = [plane1]
 
     # sphere list
-
     sphere1 = sphere = {'origin': [2.2, 0.3, 1.0], 'radius': 1.0, 'color': RED}
     sphere2 = sphere = {'origin': [0.6, 0.7, 0.4], 'radius': 0.4, 'color': BLUE}
     sphere3 = sphere = {'origin': [0.6, -0.8, 0.5], 'radius': 0.5, 'color': YELLOW}
@@ -55,51 +55,16 @@ def generate_scene(sphere_list: list, light_list: list, plane_list: list) -> (np
     return spheres, lights, planes
 
 
-def rotation_z(psi: float) -> np.ndarray:
-    """ Return the Rotation matrix around the Z-axis for psi in degrees. """
-
-    psi = np.deg2rad(psi)
-    R_rot = np.array([[np.cos(psi), -np.sin(psi), 0],
-                      [np.sin(psi), np.cos(psi), 0],
-                      [0, 0, 1]])
-    return R_rot
-
-
-def rotation_y(theta: float) -> np.ndarray:
-    """ Return the Rotation matrix around the Y-axis for theta in degrees. """
-
-    theta = np.deg2rad(theta)
-    R_rot = np.array([[np.cos(theta), 0, -np.sin(theta)],
-                      [0,             1,               0],
-                      [np.sin(theta), 0, np.cos(theta)]])
-    return R_rot
-
-
-def rotation_x(phi: float) -> np.ndarray:
-    """ Return the Rotation matrix around the X-axis for phi in degrees. """
-
-    phi = np.deg2rad(phi)
-    R_rot = np.array([[1, 0, 0],
-                      [0, np.cos(phi), -np.sin(phi)],
-                      [0, np.sin(phi), np.cos(phi)]])
-    return R_rot
-
-
 def generate_rays(width: int, height: int, camera_rotation: list = None, field_of_view: int = 45, camera_position: list = None) -> (list, np.ndarray, np.ndarray):
     """ Generates the camera position, the camera attitude rotation matrix and the pixel locations on the camera plane."""
 
     if camera_position is None:
-        camera_position = [0, 0, 0]                                                 # Default at origin
-
-    R = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])                                 # Rotation matrix
+        camera_position = [0, 0, 0]
 
     if camera_rotation is None:
         camera_rotation = [0, 0, 0]
 
-    Ry = rotation_y(camera_rotation[1])
-    Rz = rotation_z(camera_rotation[2])
-
-    R = np.matmul(Rz, Ry)
+    R = euler_rotation(camera_rotation[0], camera_rotation[1], camera_rotation[2])
 
     AR = width/height
     yy, zz = np.mgrid[AR:-AR:complex(0, width), 1:-1:complex(0, height)]            # Create pixel grid
@@ -136,7 +101,7 @@ def main(do_render_timing_test=False):
     planes = cuda.to_device(planes_host)
 
     # 3) Set up camera and rays
-    camera_rotation = [0, -20, 0]
+    camera_rotation = [0, -20, 180]
     camera_position = [-2, 0, 2.0]
     camera_origin_host, camera_rotation_host, pixel_locations_host = \
         generate_rays(w, h, camera_rotation=camera_rotation, camera_position=camera_position)
@@ -177,15 +142,15 @@ def main(do_render_timing_test=False):
 
         print(f'Rendering...')
         start = time.time()
-        render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, ambient_int, lambert_int,
-                                                      reflection_int, 10)
+        render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, 0.04, lambert_int,
+                                                      0.9, 19)
         end = time.time()
         print(f'Render time: {1000*(end-start)} ms')
 
     # Get the pixel array from GPU memory.
     result = A.copy_to_host()
     image = get_render(result)
-    image.save('../output/678.png')
+    image.save('../output/test_180yaw.png')
 
     return 0
 
@@ -206,4 +171,4 @@ def get_render(x: np.ndarray) -> Image:
 
 
 if __name__ == '__main__':
-    main(do_render_timing_test=False)
+    main(do_render_timing_test=True)
