@@ -5,14 +5,16 @@ The following scene takes less than 1 ms to render after the code is compiled (u
 ![Render example](https://user-images.githubusercontent.com/27952562/62824447-2d416c80-bb9e-11e9-8a35-cd432c76c976.png)
 
 ### CUDA Toolkit installation
-The package 
-* compatible cuda toolkit installation with an Nvidia GPU
+A compatible installation of the CUDA toolkit is required.
+
+Download from:
+[https://developer.nvidia.com/cuda-toolkit](https://developer.nvidia.com/cuda-toolkit)
+
 
 ### Usage
 
-`main.py` will produce a PNG image in the `/output/` 
-Run main.py which will produce a PNG image and will 
-
+- `main.py` will produce a PNG image in the `/output/` folder.
+- (...) defining a scene (at the moment can be done using the Scene class. Check out `scene.py`)
 
 ### Feature to-do list
 - more robust way of defining materials and shader settings
