@@ -1,5 +1,6 @@
 .idea/
-.output/
+output/*
+!output/.gitkeep
 
 *.png
 *.swp

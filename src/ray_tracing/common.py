@@ -1,5 +1,7 @@
 from numba import cuda
 from math import sqrt
+from functools import wraps
+from time import time
 
 
 @cuda.jit(device=True)
@@ -94,3 +96,18 @@ def get_reflection(ray_dir, normal):
     R1 = R1 / norm
     R2 = R2 / norm
     return R0, R1, R2
+
+
+def timed(f):
+    """ Timing decorator. """
+
+    @wraps(f)
+    def wrap(*args, **kw):
+        start_time = time()
+        result = f(*args, **kw)
+        end_time = time()
+
+        print(f'Function: {f.__name__} timed run took: {1000 * (end_time - start_time):,.1f} ms')
+        return result
+
+    return wrap

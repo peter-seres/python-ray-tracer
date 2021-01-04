@@ -1,30 +1,14 @@
-import time
 import numpy as np
 from numba import cuda
 from ray_tracing import render_kernel, ray_dir_kernel
-from PIL import Image, ImageOps
 from scene import Scene, Camera
-
-
-def get_render(x: np.ndarray) -> Image:
-    """ Takes numpy array x and converts it to RGB image. """
-
-    y = np.zeros(shape=(x.shape[1], x.shape[2], 3))
-
-    # Rearrange the coordinates:
-    for i in range(3):
-        y[:, :, i] = x[i, :, :]
-
-    im = Image.fromarray(y.astype(np.uint8), mode='RGB')
-    im = ImageOps.mirror(im.rotate(270))
-
-    return im
+from viewer import convert_array_to_image
 
 
 def main():
     # 1) Render and shader settings:
     w, h = 1000, 1000
-    ambient_int, lambert_int, reflection_int, reflection_depth = 0.1, 0.6, 0.5, 5
+    amb, lamb, refl, refl_depth = 0.1, 0.6, 0.5, 5
 
     # 2) Generate scene:
     scene = Scene.default_scene()
@@ -53,25 +37,16 @@ def main():
     blockspergrid_y = int(np.ceil(A.shape[2] / threadsperblock[1]))
     blockspergrid = (blockspergrid_x, blockspergrid_y)
 
-    # Calculate ray directions:
-    print('Running ray generation kernel')
-    start = time.time()
+    # 6) JIT compile + calculate ray directions:
     ray_dir_kernel[blockspergrid, threadsperblock](pixel_locations, rays, camera_origin, camera_rotation)
-    end = time.time()
-    print(f'Compile + generate time: {1000 * (end - start):,.1f} ms')
 
-    # JIT Compile + render it:
-    print('Running render kernel...')
-    start = time.time()
-    render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, ambient_int, lambert_int,
-                                                  reflection_int, reflection_depth)
-    end = time.time()
-    print(f'Compile + run time: {1000 * (end - start):,.1f} ms')
+    # 7) JIT Compile + render it:
+    render_kernel[blockspergrid, threadsperblock](A, rays, spheres, light, planes, amb, lamb, refl, refl_depth)
 
-    # Get the pixel array from GPU memory.
+    # 8) Present the result as a .png
     result = A.copy_to_host()
-    image = get_render(result)
-    image.save('../output/test_180yaw.png')
+    image = convert_array_to_image(result)
+    image.save('../output/test4.png')
 
     return 0
 

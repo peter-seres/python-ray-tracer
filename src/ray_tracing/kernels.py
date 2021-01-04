@@ -5,7 +5,8 @@ from math import sqrt
 
 
 @cuda.jit()
-def render_kernel(pixel_array, rays, spheres, lights, planes, ambient_int, lambert_int, reflection_int, depth):
+def render_kernel(pixel_array, rays, spheres, lights, planes,
+                  ambient_int, lambert_int, reflection_int, depth):
     """ This kernel render one pixel by casting a ray from a specific pixel location."""
 
     # Location of pixel
