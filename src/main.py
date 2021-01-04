@@ -5,54 +5,30 @@ from ray_tracing import render_kernel, ray_dir_kernel
 from PIL import Image, ImageOps
 from scene.colors import *
 from scene.rotation import euler_rotation
+from scene.scene import Sphere, Light, Plane, Scene
 
 
-def custom_scene() -> (list, list, list):
+def new_scene() -> (np.ndarray, np.ndarray, np.ndarray):
+
     # Light sources:
-    light1 = {'origin': [2.5, -2.0, 3.0]}
-    light2 = {'origin': [2.5,  2.0, 3.0]}
-    light_list = [light1, light2]
+    lights = [Light([2.5, -2.0, 3.0])]
 
-    # Horizontal plane:
-    plane1 = {'origin': [5, 0, 0], 'normal': [0, 0, 1], 'color': GREY}
-    plane_list = [plane1]
+    # Sphere objects:
+    sphere_1 = Sphere([2.2, 0.3, 1.0], 1.0, RED)
+    sphere_2 = Sphere([0.6, 0.7, 0.4], 0.4, BLUE)
+    sphere_3 = Sphere([0.6, -0.8, 0.5], 0.5, YELLOW)
+    sphere_4 = Sphere([-1.2, 0.2, 0.5], 0.5, MAGENTA)
+    sphere_5 = Sphere([-1.7, -0.5, 0.3], 0.3, GREEN)
+    sphere_6 = Sphere([-2.0, 1.31, 1.3], 1.3, RED)
+    spheres = [sphere_1, sphere_2, sphere_3, sphere_4, sphere_5, sphere_6]
 
-    # sphere list
-    sphere1 = sphere = {'origin': [2.2, 0.3, 1.0], 'radius': 1.0, 'color': RED}
-    sphere2 = sphere = {'origin': [0.6, 0.7, 0.4], 'radius': 0.4, 'color': BLUE}
-    sphere3 = sphere = {'origin': [0.6, -0.8, 0.5], 'radius': 0.5, 'color': YELLOW}
-    sphere4 = sphere = {'origin': [-1.2, 0.2, 0.5], 'radius': 0.5, 'color': MAGENTA}
-    sphere5 = sphere = {'origin': [-1.7, -0.5, 0.3], 'radius': 0.3, 'color': GREEN}
-    sphere6 = sphere = {'origin': [-2.0, 1.31, 1.3], 'radius': 1.3, 'color': RED}
+    # Plane objects:
+    planes = [Plane([5, 0, 0], [0, 0, 1], GREY)]
 
-    sphere_list = [sphere1, sphere2, sphere3, sphere4, sphere5, sphere6]
+    # Generate the scene data:
+    scene = Scene(lights, spheres, planes)
 
-    return sphere_list, light_list, plane_list
-
-
-def generate_scene(sphere_list: list, light_list: list, plane_list: list) -> (np.ndarray, np.ndarray, np.ndarray):
-    """ Takes scene object dictionaries and converts them to a numpy array format. """
-
-    # Build the sphere data array
-    spheres = np.zeros((7, len(sphere_list)), dtype=np.float32)
-    for i, s in enumerate(sphere_list):
-        spheres[0:3, i]    = np.array(s['origin'])
-        spheres[3, i]      = s['radius']
-        spheres[4:7, i]    = np.array(s['color'])
-
-    # Build the light data array
-    lights = np.zeros((3, len(light_list)), dtype=np.float32)
-    for i, lig in enumerate(light_list):
-        lights[0:3, i]    = np.array(lig['origin'])
-
-    # Build the plane data array
-    planes = np.zeros((9, len(plane_list)), dtype=np.float32)
-    for i, p in enumerate(plane_list):
-        planes[0:3, i]    = np.array(p['origin'])
-        planes[3:6, i]    = np.array(p['normal']) / np.linalg.norm(np.array(p['normal']))
-        planes[6:, i]    = np.array(p['color'])
-
-    return spheres, lights, planes
+    return scene.generate_scene()
 
 
 def generate_rays(width: int, height: int, camera_rotation: list = None, field_of_view: int = 45, camera_position: list = None) -> (list, np.ndarray, np.ndarray):
@@ -90,10 +66,15 @@ def main(do_render_timing_test=False):
     ambient_int, lambert_int, reflection_int = 0.1, 0.6, 0.5
 
     # 2) Generate scene:
-    sphere_list, light_list, plane_list = custom_scene()
+    # sphere_list, light_list, plane_list = custom_scene()
 
     # Generate the numpy arrays:
-    spheres_host, light_host, planes_host = generate_scene(sphere_list, light_list, plane_list)
+    # spheres_host, light_host, planes_host = generate_scene(sphere_list, light_list, plane_list)
+q
+    spheres_host, light_host, planes_host = new_scene()
+
+    # print(type(spheres_host), type(light_host), type(planes_host))
+    # print(spheres_host.shape, light_host.shape, planes_host.shape)
 
     # Send the numpy arrays to GPU memory:
     spheres = cuda.to_device(spheres_host)
@@ -101,7 +82,7 @@ def main(do_render_timing_test=False):
     planes = cuda.to_device(planes_host)
 
     # 3) Set up camera and rays
-    camera_rotation = [0, -20, 180]
+    camera_rotation = [0, -20, 0]
     camera_position = [-2, 0, 2.0]
     camera_origin_host, camera_rotation_host, pixel_locations_host = \
         generate_rays(w, h, camera_rotation=camera_rotation, camera_position=camera_position)
@@ -171,4 +152,4 @@ def get_render(x: np.ndarray) -> Image:
 
 
 if __name__ == '__main__':
-    main(do_render_timing_test=True)
+    main(do_render_timing_test=False)
