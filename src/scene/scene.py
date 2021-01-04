@@ -1,13 +1,16 @@
+from __future__ import annotations
 import numpy as np
 from dataclasses import dataclass
-from typing import List, Union
+from typing import List
+from .colors import *
+from .common import Vector3D, Color
 
 
 @dataclass
 class Sphere:
-    origin: Union[np.ndarray, list]
+    origin: Vector3D
     radius: float
-    color: List[int]
+    color: Color
 
     data_length: int = 7
 
@@ -22,7 +25,7 @@ class Sphere:
 
 @dataclass
 class Light:
-    origin: Union[np.ndarray, list]
+    origin: Vector3D
 
     data_length: int = 3
 
@@ -35,9 +38,9 @@ class Light:
 
 @dataclass
 class Plane:
-    origin: np.ndarray
-    normal: np.ndarray
-    color: np.ndarray
+    origin: Vector3D
+    normal: Vector3D
+    color: Color
 
     data_length: int = 9
 
@@ -64,7 +67,7 @@ class Scene:
             data[:, i] = s.to_array()
 
         return data
-         
+
     def get_planes(self) -> np.ndarray:
         """ Generate data array containing plane data: """
         data = np.zeros((Plane.data_length, len(self.planes)), dtype=np.float32)
@@ -85,3 +88,20 @@ class Scene:
 
     def generate_scene(self) -> (np.ndarray, np.ndarray, np.ndarray):
         return self.get_spheres(), self.get_lights(), self.get_planes()
+
+    @staticmethod
+    def default_scene() -> Scene:
+
+        lights = [Light([2.5, -2.0, 3.0]),
+                  Light([2.5,  2.0, 3.0])]
+
+        spheres = [Sphere([2.2, 0.3, 1.0], 1.0, RED),
+                   Sphere([0.6, 0.7, 0.4], 0.4, BLUE),
+                   Sphere([0.6, -0.8, 0.5], 0.5, YELLOW),
+                   Sphere([-1.2, 0.2, 0.5], 0.5, MAGENTA),
+                   Sphere([-1.7, -0.5, 0.3], 0.3, GREEN),
+                   Sphere([-2.0, 1.31, 1.3], 1.3, RED)]
+
+        planes = [Plane([5, 0, 0], [0, 0, 1], GREY)]
+
+        return Scene(lights, spheres, planes)
