@@ -9,6 +9,7 @@ def main():
     # 1) Render and shader settings:
     w, h = 1000, 1000
     amb, lamb, refl, refl_depth = 0.1, 0.6, 0.5, 5
+    aliasing = True
 
     # 2) Generate scene:
     scene = Scene.default_scene()
@@ -38,18 +39,18 @@ def main():
 
     # 6) Call JIT compiled renderer:
     render[blockspergrid, threadsperblock](pixel_loc, result, camera_origin, camera_rotation,
-                                           spheres, lights, planes, amb, lamb, refl, refl_depth)
+                                           spheres, lights, planes, amb, lamb, refl, refl_depth, aliasing)
 
     import time
     st = time.time()
     render[blockspergrid, threadsperblock](pixel_loc, result, camera_origin, camera_rotation,
-                                           spheres, lights, planes, amb, lamb, refl, refl_depth)
+                                           spheres, lights, planes, amb, lamb, refl, refl_depth, aliasing)
     et = time.time()
     print(f"time: {1000 * (et - st):,.1f} ms")
     # 7) Present the result as a .png
     result = result.copy_to_host()
     image = convert_array_to_image(result)
-    image.save('../output/test_sampled_highres.png')
+    image.save('../output/test_sampled_highres_utlra_aliasing_testing.png')
 
     return 0
 

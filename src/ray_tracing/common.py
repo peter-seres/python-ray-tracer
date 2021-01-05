@@ -117,13 +117,7 @@ def get_plane_normal(plane_index, planes):
 def get_reflection(ray_dir, normal):
     """ Returns the unit reflection direction vector."""
 
-    D0, D1, D2 = ray_dir
-    N0, N1, N2 = normal
-
     D_dot_N = dot(ray_dir, normal)
+    R = linear_comb(ray_dir, normal, 1.0, -2.0 * D_dot_N)
 
-    R0 = D0 - 2 * D_dot_N * N0
-    R1 = D1 - 2 * D_dot_N * N1
-    R2 = D2 - 2 * D_dot_N * N2
-
-    return normalize((R0, R1, R2))
+    return normalize(R)
