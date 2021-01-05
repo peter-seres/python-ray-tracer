@@ -20,7 +20,8 @@ def get_intersection(ray_origin: tuple, ray_dir: tuple, spheres, planes) -> (flo
 
     # Loop through all spheres:
     for idx in range(spheres.shape[1]):
-        dist = intersect_ray_sphere(ray_origin, ray_dir, spheres[0:3, idx], spheres[3, idx])
+        (SO_X, SO_Y, SO_Z) = spheres[0:3, idx]
+        dist = intersect_ray_sphere(ray_origin, ray_dir, (SO_X, SO_Y, SO_Z), spheres[3, idx])
 
         # If it hits the sphere and dist is closer than the closest one:
         if intersect_dist > dist > 0:
@@ -126,8 +127,7 @@ def trace(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_in
 
 
 @cuda.jit(device=True)
-def sample(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_int: float, lambert_int: float,
-           reflection_int: float, refl_depth: int) -> (tuple, tuple, tuple):
+def sample(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_int, lambert_int, reflection_int, refl_depth) -> (tuple, tuple, tuple):
 
     # Run the tracing for this pixel to get R, G, B values
     RGB, POINT, REFLECTION_DIR = trace(ray_origin, ray_dir, spheres, lights, planes, ambient_int, lambert_int)

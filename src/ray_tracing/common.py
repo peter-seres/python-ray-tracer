@@ -1,7 +1,27 @@
 from numba import cuda
 from math import sqrt
-from functools import wraps
-from time import time
+
+
+@cuda.jit(device=True)
+def vector_difference(fromm, to):
+
+    f0, f1, f2 = fromm
+    t0, t1, t2 = to
+
+    return (t0 - f0, t1 - f1, t2 - f2)
+
+
+@cuda.jit(device=True)
+def normalize(vector):
+    (X, Y, Z) = vector
+    norm = sqrt(X * X + Y * Y + Z * Z)
+
+    return (X / norm, Y / norm, Z / norm)
+
+
+@cuda.jit(device=True)
+def dot(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 
 
 @cuda.jit(device=True)
@@ -15,9 +35,8 @@ def clip_color(color):
 def get_sphere_color(index, spheres):
     """ Returns the color tuple of a sphere."""
 
-    R = spheres[4, index]
-    G = spheres[5, index]
-    B = spheres[6, index]
+    R, G, B = spheres[4:7, index]
+
     return R, G, B
 
 
@@ -25,89 +44,51 @@ def get_sphere_color(index, spheres):
 def get_plane_color(index, planes):
     """ Returns the color tuple of a plane."""
 
-    R = planes[6, index]
-    G = planes[7, index]
-    B = planes[8, index]
+    R, G, B = planes[6:9, index]
+
     return R, G, B
 
 
 @cuda.jit(device=True)
 def get_vector_to_light(P, lights, light_index):
-    """ Returns the unit vector to a light from point P"""
+    """ Returns the unit vector from point P to a light L"""
 
-    L0 = lights[0, light_index] - P[0]
-    L1 = lights[1, light_index] - P[1]
-    L2 = lights[2, light_index] - P[2]
-    norm = sqrt(L0 * L0 + L1 * L1 + L2 * L2)
-    L0 = L0 / norm
-    L1 = L1 / norm
-    L2 = L2 / norm
-    return L0, L1, L2
+    L = lights[0:3, light_index]
+    P_L = vector_difference(P, L)
+
+    return normalize(P_L)
 
 
 @cuda.jit(device=True)
 def get_sphere_normal(P, sphere_index, spheres):
     """ Returns the unit normal vector on the surface of a sphere at point P. """
 
-    N0 = P[0] - spheres[0, sphere_index]
-    N1 = P[1] - spheres[1, sphere_index]
-    N2 = P[2] - spheres[2, sphere_index]
-    norm = sqrt(N0 * N0 + N1 * N1 + N2 * N2)
-    N0 = N0 / norm
-    N1 = N1 / norm
-    N2 = N2 / norm
-    return N0, N1, N2
+    sphere_origin = spheres[0:3, sphere_index]
+    N = vector_difference(sphere_origin, P)
+
+    return normalize(N)
 
 
 @cuda.jit(device=True)
 def get_plane_normal(plane_index, planes):
     """ Returns the unit normal vector on the surface of a normal at point P. """
 
-    N0 = planes[3, plane_index]
-    N1 = planes[4, plane_index]
-    N2 = planes[5, plane_index]
-    norm = sqrt(N0 * N0 + N1 * N1 + N2 * N2)
-    N0 = N0 / norm
-    N1 = N1 / norm
-    N2 = N2 / norm
-    return N0, N1, N2
+    N0, N1, N2 = planes[3:6, plane_index]
+
+    return normalize((N0, N1, N2))
 
 
 @cuda.jit(device=True)
 def get_reflection(ray_dir, normal):
     """ Returns the unit reflection direction vector."""
 
-    D0 = ray_dir[0]
-    D1 = ray_dir[1]
-    D2 = ray_dir[2]
+    D0, D1, D2 = ray_dir
+    N0, N1, N2 = normal
 
-    N0 = normal[0]
-    N1 = normal[1]
-    N2 = normal[2]
-
-    D_dot_N = D0 * N0 + D1 * N1 + D2 * N2
+    D_dot_N = dot(ray_dir, normal)
 
     R0 = D0 - 2 * D_dot_N * N0
     R1 = D1 - 2 * D_dot_N * N1
     R2 = D2 - 2 * D_dot_N * N2
 
-    norm = sqrt(R0 * R0 + R1 * R1 + R2 * R2)
-    R0 = R0 / norm
-    R1 = R1 / norm
-    R2 = R2 / norm
-    return R0, R1, R2
-
-
-def timed(f):
-    """ Timing decorator. """
-
-    @wraps(f)
-    def wrap(*args, **kw):
-        start_time = time()
-        result = f(*args, **kw)
-        end_time = time()
-
-        print(f'Function: {f.__name__} timed run took: {1000 * (end_time - start_time):,.1f} ms')
-        return result
-
-    return wrap
+    return normalize((R0, R1, R2))

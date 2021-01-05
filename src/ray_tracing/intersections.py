@@ -1,5 +1,6 @@
 from numba import cuda
 from math import sqrt
+from .common import normalize, dot, vector_difference
 
 
 @cuda.jit(device=True)
@@ -9,20 +10,15 @@ def intersect_ray_sphere(ray_origin: tuple, ray_dir: tuple, sphere_origin: tuple
      intersection point can be found."""
 
     # 0) R : Vector of ray direction. Make sure it is normalized:
-    dir_norm = sqrt(ray_dir[0] * ray_dir[0] + ray_dir[1] * ray_dir[1] + ray_dir[2] * ray_dir[2])
-    R0 = ray_dir[0] / dir_norm
-    R1 = ray_dir[1] / dir_norm
-    R2 = ray_dir[2] / dir_norm
+    R = normalize(ray_dir)
 
     # 1) L : Vector pointing from Sphere origin to ray origin
-    L0 = ray_origin[0] - sphere_origin[0]
-    L1 = ray_origin[1] - sphere_origin[1]
-    L2 = ray_origin[2] - sphere_origin[2]
+    L = vector_difference(sphere_origin, ray_origin)
 
     # 2) Second order equation terms: a, b, c:
-    a = R0 * R0 + R1 * R1 + R2 * R2
-    b = 2 * (L0 * R0 + L1 * R1 + L2 * R2)
-    c = L0 * L0 + L1 * L1 + L2 * L2 - sphere_radius * sphere_radius
+    a = dot(R, R)
+    b = 2 * dot(L, R)
+    c = dot(L, L) - sphere_radius * sphere_radius
 
     discriminant = b * b - 4 * a * c
 
@@ -50,23 +46,19 @@ def intersect_ray_plane(ray_origin: tuple, ray_dir: tuple, plane_origin: tuple, 
     EPS = 0.001
 
     # N: Plane normal vector
-    N0 = plane_normal[0]
-    N1 = plane_normal[1]
-    N2 = plane_normal[2]
+    N = plane_normal[0:3]
 
     # Dot product of ray direction and normal vector
-    denom = ray_dir[0] * N0 + ray_dir[1] * N1 + ray_dir[2] * N2
+    denom = dot(ray_dir, plane_normal)
 
     # Check if ray is not parallel with plane:
     if abs(denom) < EPS:
         return -999.9
 
     # LP: Vector from ray to plane center
-    LP_0 = plane_origin[0] - ray_origin[0]
-    LP_1 = plane_origin[1] - ray_origin[1]
-    LP_2 = plane_origin[2] - ray_origin[2]
+    LP = vector_difference(ray_origin, plane_origin)
 
-    nominator = LP_0 * N0 + LP_1 * N1 + LP_2 * N2
+    nominator = dot(LP, N)
 
     dist = nominator / denom
 
