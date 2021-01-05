@@ -7,7 +7,7 @@ from viewer import convert_array_to_image
 
 def main():
     # 1) Render and shader settings:
-    w, h = 1220, 1220
+    w, h = 1000, 1000
     amb, lamb, refl, refl_depth = 0.1, 0.6, 0.5, 5
 
     # 2) Generate scene:
@@ -20,7 +20,7 @@ def main():
     planes = cuda.to_device(planes_host)
 
     # 3) Set up camera and rays
-    camera = Camera(resolution=(w, h), position=[-2, 0, 2.0], euler=[0, -20, 0])
+    camera = Camera(resolution=(w, h), position=[-2, 0, 2.0], euler=[0, -30, 0])
 
     # Send the camera data to GPU memory:
     camera_origin = cuda.to_device(camera.position)
@@ -40,10 +40,16 @@ def main():
     render[blockspergrid, threadsperblock](pixel_loc, result, camera_origin, camera_rotation,
                                            spheres, lights, planes, amb, lamb, refl, refl_depth)
 
+    import time
+    st = time.time()
+    render[blockspergrid, threadsperblock](pixel_loc, result, camera_origin, camera_rotation,
+                                           spheres, lights, planes, amb, lamb, refl, refl_depth)
+    et = time.time()
+    print(f"time: {1000 * (et - st):,.1f} ms")
     # 7) Present the result as a .png
     result = result.copy_to_host()
     image = convert_array_to_image(result)
-    image.save('../output/test_sampled.png')
+    image.save('../output/test_sampled_highres.png')
 
     return 0
 

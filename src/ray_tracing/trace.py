@@ -1,7 +1,7 @@
 from numba import cuda
 from .intersections import intersect_ray_sphere, intersect_ray_plane
 from .common import get_sphere_color, get_plane_color, get_sphere_normal, get_plane_normal, get_vector_to_light, \
-    get_reflection
+    get_reflection, dot, clip_color_vector
 
 
 @cuda.jit(device=True)
@@ -20,8 +20,7 @@ def get_intersection(ray_origin: tuple, ray_dir: tuple, spheres, planes) -> (flo
 
     # Loop through all spheres:
     for idx in range(spheres.shape[1]):
-        (SO_X, SO_Y, SO_Z) = spheres[0:3, idx]
-        dist = intersect_ray_sphere(ray_origin, ray_dir, (SO_X, SO_Y, SO_Z), spheres[3, idx])
+        dist = intersect_ray_sphere(ray_origin, ray_dir, spheres[0:3, idx], spheres[3, idx])
 
         # If it hits the sphere and dist is closer than the closest one:
         if intersect_dist > dist > 0:
@@ -69,12 +68,12 @@ def trace(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_in
     if obj_type == 0:           # (if it's a sphere)
 
         R_obj, G_obj, B_obj = get_sphere_color(obj_index, spheres)
-        N0, N1, N2 = get_sphere_normal((P0, P1, P2), obj_index, spheres)
+        N = get_sphere_normal((P0, P1, P2), obj_index, spheres)
 
     elif obj_type == 1:         # (if it's a plane)
 
         R_obj, G_obj, B_obj = get_plane_color(obj_index, planes)
-        N0, N1, N2 = get_plane_normal(obj_index, planes)
+        N = get_plane_normal(obj_index, planes)
 
     else:                       # (if ray does not intersect)
         return (0., 0., 0.), (404., 404., 404.), (404, 404., 404.)
@@ -88,21 +87,21 @@ def trace(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_in
 
     # Shift point P along the normal vector to avoid shadow acne:
     BIAS = 0.0002
-    P0 = P0 + BIAS * N0
-    P1 = P1 + BIAS * N1
-    P2 = P2 + BIAS * N2
+    P0 = P0 + BIAS * N[0]
+    P1 = P1 + BIAS * N[1]
+    P2 = P2 + BIAS * N[2]
 
     for light_index in range(lights.shape[1]):
 
         # Get unit vector L from intersection point P to the light:
-        L0, L1, L2 = get_vector_to_light((P0, P1, P2), lights, light_index)
+        L = get_vector_to_light((P0, P1, P2), lights, light_index)
 
         # If there is a line of sight to the light source, do the lambert shading:
-        _, _, shadow_type = get_intersection((P0, P1, P2), (L0, L1, L2), spheres, planes)
+        _, _, shadow_type = get_intersection((P0, P1, P2), L, spheres, planes)
 
         if shadow_type == 404:
 
-            lambert_intensity = L0 * N0 + L1 * N1 + L2 * N2
+            lambert_intensity = dot(L, N)
 
             if lambert_intensity > 0:
                 R = R + R_obj * lambert_intensity * lambert_int
@@ -112,7 +111,7 @@ def trace(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_in
     # >>> 3) REFLECTIONS:
 
     # Reflection direction:
-    R0, R1, R2 = get_reflection(ray_dir, (N0, N1, N2))
+    R0, R1, R2 = get_reflection(ray_dir, N)
 
     # Shift point P along reflection vector to avoid mirror acne:
     P0 = P0 + BIAS * R0
@@ -132,7 +131,7 @@ def sample(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_i
     # Run the tracing for this pixel to get R, G, B values
     RGB, POINT, REFLECTION_DIR = trace(ray_origin, ray_dir, spheres, lights, planes, ambient_int, lambert_int)
 
-    R, G, B = RGB
+    (R, G, B) = RGB
 
     # Run the reflection "depth" amount of times:
     for i in range(refl_depth):
@@ -141,6 +140,7 @@ def sample(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_i
 
         RGB_refl, POINT, REFLECTION_DIR = trace(POINT, REFLECTION_DIR, spheres, lights, planes, ambient_int, lambert_int)
 
+        # Reflections power loss:
         R += RGB_refl[0] * reflection_int ** (i + 1)
         G += RGB_refl[1] * reflection_int ** (i + 1)
         B += RGB_refl[2] * reflection_int ** (i + 1)
