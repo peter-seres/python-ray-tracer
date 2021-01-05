@@ -123,3 +123,26 @@ def trace(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_in
     REFLECTION_DIR = (R0, R1, R2)
 
     return color, POINT, REFLECTION_DIR
+
+
+@cuda.jit(device=True)
+def sample(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_int: float, lambert_int: float,
+           reflection_int: float, refl_depth: int) -> (tuple, tuple, tuple):
+
+    # Run the tracing for this pixel to get R, G, B values
+    RGB, POINT, REFLECTION_DIR = trace(ray_origin, ray_dir, spheres, lights, planes, ambient_int, lambert_int)
+
+    R, G, B = RGB
+
+    # Run the reflection "depth" amount of times:
+    for i in range(refl_depth):
+        if POINT[0] == 404. and POINT[1] == 404. and POINT[2] == 404.:
+            continue
+
+        RGB_refl, POINT, REFLECTION_DIR = trace(POINT, REFLECTION_DIR, spheres, lights, planes, ambient_int, lambert_int)
+
+        R += RGB_refl[0] * reflection_int ** (i + 1)
+        G += RGB_refl[1] * reflection_int ** (i + 1)
+        B += RGB_refl[2] * reflection_int ** (i + 1)
+
+    return (R, G, B)

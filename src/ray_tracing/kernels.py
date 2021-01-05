@@ -1,5 +1,5 @@
 from numba import cuda
-from .trace import trace
+from .trace import sample
 from .common import clip_color
 from math import sqrt
 
@@ -25,21 +25,7 @@ def render_kernel(pixel_array, rays, spheres, lights, planes,
         RD_Y = rays[4, x, y]
         RD_Z = rays[5, x, y]
 
-        # Run the tracing for this pixel to get R, G, B values
-        RGB, POINT, REFLECTION_DIR = trace((R0_X, R0_Y, R0_Z), (RD_X, RD_Y, RD_Z), spheres, lights, planes, ambient_int, lambert_int)
-
-        R, G, B = RGB
-
-        # Run the reflection "depth" amount of times:
-        for i in range(depth):
-            if POINT[0] == 404. and POINT[1] == 404. and POINT[2] == 404.:
-                continue
-
-            RGB_refl, POINT, REFLECTION_DIR = trace(POINT, REFLECTION_DIR, spheres, lights, planes, ambient_int, lambert_int)
-
-            R += RGB_refl[0] * reflection_int**(i+1)
-            G += RGB_refl[1] * reflection_int**(i+1)
-            B += RGB_refl[2] * reflection_int**(i+1)
+        R, G, B = sample((R0_X, R0_Y, R0_Z), (RD_X, RD_Y, RD_Z), spheres, lights, planes, ambient_int, lambert_int, reflection_int, depth)
 
         # Save the final color the array:
         pixel_array[0, x, y] = clip_color(R)

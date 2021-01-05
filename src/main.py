@@ -7,7 +7,7 @@ from viewer import convert_array_to_image
 
 def main():
     # 1) Render and shader settings:
-    w, h = 1000, 1000
+    w, h = 1220, 1220
     amb, lamb, refl, refl_depth = 0.1, 0.6, 0.5, 5
 
     # 2) Generate scene:
@@ -46,7 +46,7 @@ def main():
     # 8) Present the result as a .png
     result = A.copy_to_host()
     image = convert_array_to_image(result)
-    image.save('../output/test4.png')
+    image.save('../output/test_sampling.png')
 
     return 0
 
