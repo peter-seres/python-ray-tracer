@@ -57,7 +57,7 @@ def trace(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_in
         return RGB, (404., 404., 404.), (404, 404., 404.)
 
     # Get point of intersection P:
-    P = (P0, P1, P2) = linear_comb(ray_origin, ray_dir, 1.0, intersect_dist)
+    P = linear_comb(ray_origin, ray_dir, 1.0, intersect_dist)
 
     # Get the color of the object and the surface normal based on what type of object the ray hit:
     if obj_type == 0:           # (if it's a sphere)
@@ -80,7 +80,7 @@ def trace(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_in
 
     # Shift point P along the normal vector to avoid shadow acne:
     BIAS = 0.0002
-    P = (P0, P1, P2) = linear_comb(P, N, 1.0, BIAS)
+    P = linear_comb(P, N, 1.0, BIAS)
 
     # Do the lambert shading for each light source:
     for light_index in range(lights.shape[1]):
@@ -89,13 +89,17 @@ def trace(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_in
         L = get_vector_to_light(P, lights, light_index)
 
         # If there is a line of sight to the light source, do the lambert shading:
-        _, _, shadow_type = get_intersection(P, L, spheres, planes)
+        _, _, obj_type = get_intersection(P, L, spheres, planes)
 
-        if shadow_type == 404:
-            lambert_intensity = lambert_int * dot(L, N)
+        # If there is an object in the way -> skip Lambert shading
+        if obj_type != 404:
+            continue
 
-            if lambert_intensity > 0:
-                RGB = linear_comb(RGB, RGB_obj, 1.0, lambert_intensity)
+        # Lambert intensity depends on shader setting and surface normal
+        lambert_intensity = lambert_int * dot(L, N)
+
+        if lambert_intensity > 0:
+            RGB = linear_comb(RGB, RGB_obj, 1.0, lambert_intensity)
 
     # >>> 3) REFLECTIONS:
 

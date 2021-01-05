@@ -8,7 +8,7 @@ from viewer import convert_array_to_image
 def main():
     # 1) Render and shader settings:
     w, h = 1000, 1000
-    amb, lamb, refl, refl_depth = 0.1, 0.6, 0.5, 5
+    amb, lamb, refl, refl_depth = 0.0, 0.6, 0.3, 2
     aliasing = True
 
     # 2) Generate scene:
@@ -44,7 +44,7 @@ def main():
     import time
     st = time.time()
     render[blockspergrid, threadsperblock](pixel_loc, result, camera_origin, camera_rotation,
-                                           spheres, lights, planes, amb, lamb, refl, refl_depth, aliasing)
+                                           spheres, lights, planes, amb, lamb, refl, refl_depth+2, aliasing)
     et = time.time()
     print(f"time: {1000 * (et - st):,.1f} ms")
     # 7) Present the result as a .png

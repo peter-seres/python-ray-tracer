@@ -93,7 +93,8 @@ class Scene:
     def default_scene() -> Scene:
 
         lights = [Light([2.5, -2.0, 3.0]),
-                  Light([2.5,  2.0, 3.0])]
+                  Light([2.5,  2.0, 3.0]),
+                  Light([5.0, 0.1, 6.0])]
 
         spheres = [Sphere([2.2, 0.3, 1.0], 1.0, RED),
                    Sphere([0.6, 0.7, 0.4], 0.4, BLUE),
