@@ -1,21 +1,22 @@
 from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
-from OpenGL.GL.ARB.vertex_buffer_object import *
-from OpenGL.GL.ARB.pixel_buffer_object import *
 import numpy
 import sys
 import time
+from OpenGL.GL.ARB.vertex_buffer_object import *
+from OpenGL.GL.ARB.pixel_buffer_object import *
 import pycuda.driver as cuda_driver
-from numba import cuda as nbcuda
-import ctypes
+from pycuda.compiler import SourceModule
 
-# this is all munged together from the CUDA SDK postprocessGL example.
+# noinspection PyUnresolvedReferences
+import pycuda.gl as cuda_gl
+
 initial_size = 512, 512
 current_size = initial_size
 animate = True
 enable_cuda = True
-window = None  # Number of the glut window.
+window = None
 time_of_last_draw = 0.0
 time_of_last_titleupdate = 0.0
 frames_per_second = 0.0
@@ -25,54 +26,33 @@ output_texture = None  # pointer to offscreen render target
 heading, pitch, bank = [0.0] * 3
 
 
-class ExternalMemory(object):
-    """
-    Provide an externally managed memory.
-    Interface requirement: __cuda_memory__, device_ctypes_pointer, _cuda_memize_
-    """
-    __cuda_memory__ = True
-
-    def __init__(self, ptr, size):
-        self.device_ctypes_pointer = ctypes.c_void_p(ptr)
-        self._cuda_memsize_ = size
-
-
 def create_PBOs(w, h):
     global source_pbo, dest_pbo, pycuda_source_pbo, pycuda_dest_pbo
     num_texels = w * h
-
-    data = numpy.zeros((num_texels, 4), dtype=numpy.uint8)
-
+    data = numpy.zeros((num_texels, 4), numpy.uint8)
     source_pbo = glGenBuffers(1)
     glBindBuffer(GL_ARRAY_BUFFER, source_pbo)
     glBufferData(GL_ARRAY_BUFFER, data, GL_DYNAMIC_DRAW)
     glBindBuffer(GL_ARRAY_BUFFER, 0)
-
-    pycuda_source_pbo = cuda_gl.BufferObject(long(source_pbo))
-
+    pycuda_source_pbo = cuda_gl.BufferObject(int(source_pbo))
     dest_pbo = glGenBuffers(1)
-
     glBindBuffer(GL_ARRAY_BUFFER, dest_pbo)
     glBufferData(GL_ARRAY_BUFFER, data, GL_DYNAMIC_DRAW)
     glBindBuffer(GL_ARRAY_BUFFER, 0)
-
-    pycuda_dest_pbo = cuda_gl.BufferObject(long(dest_pbo))
+    pycuda_dest_pbo = cuda_gl.BufferObject(int(dest_pbo))
 
 
 def destroy_PBOs():
     global source_pbo, dest_pbo, pycuda_source_pbo, pycuda_dest_pbo
-
     for pbo in [source_pbo, dest_pbo]:
-        glBindBuffer(GL_ARRAY_BUFFER, long(pbo))
-        glDeleteBuffers(1, long(pbo))
+        glBindBuffer(GL_ARRAY_BUFFER, int(pbo))
+        glDeleteBuffers(1, int(pbo))
         glBindBuffer(GL_ARRAY_BUFFER, 0)
-
     source_pbo, dest_pbo, pycuda_source_pbo, pycuda_dest_pbo = [None] * 4
 
 
 def create_texture(w, h):
     global output_texture
-
     output_texture = glGenTextures(1)
     glBindTexture(GL_TEXTURE_2D, output_texture)
 
@@ -83,13 +63,13 @@ def create_texture(w, h):
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
 
     # buffer data
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, None)
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                 w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, None)
 
 
 def destroy_texture():
     global output_texture
     glDeleteTextures(output_texture)
-
     output_texture = None
 
 
@@ -103,7 +83,6 @@ def init_gl():
     gluPerspective(60.0, Width / float(Height), 0.1, 10.0)
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
     glEnable(GL_LIGHT0)
-
     red = (1.0, 0.1, 0.1, 1.0)
     white = (1.0, 1.0, 1.0, 1.0)
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, red)
@@ -122,14 +101,12 @@ def resize(Width, Height):
 
 def do_tick():
     global time_of_last_titleupdate, frame_counter, frames_per_second
-
-    if ((time.clock() * 1000.0) - time_of_last_titleupdate >= 1000.):
+    if ((time.time() * 1000.0) - time_of_last_titleupdate >= 1000.):
         frames_per_second = frame_counter  # Save The FPS
         frame_counter = 0  # Reset The FPS Counter
         szTitle = "%d FPS" % (frames_per_second)
         glutSetWindowTitle(szTitle)
-        time_of_last_titleupdate = time.clock() * 1000.0
-
+        time_of_last_titleupdate = time.time() * 1000.0
     frame_counter += 1
 
 
@@ -139,15 +116,13 @@ def keyPressed(*args):
 
     # If escape is pressed, kill everything.
     if args[0] == '\033':
-        print('Closing...')
+        print('Closing..')
         destroy_PBOs()
         destroy_texture()
-        exit()
-
+        sys.exit()
     elif args[0] == 'a':
         print('toggling animation')
         animate = not animate
-
     elif args[0] == 'e':
         print('toggling cuda')
         enable_cuda = not enable_cuda
@@ -173,38 +148,18 @@ def display():
     except:
         from traceback import print_exc
         print_exc()
-        from os import _exit
-        _exit(0)
+        sys.exit()
 
 
 def process(width, height):
-    """ Use PyCuda """
     grid_dimensions = (width // 16, height // 16)
 
     source_mapping = pycuda_source_pbo.map()
     dest_mapping = pycuda_dest_pbo.map()
 
-    # invert.prepared_call(grid_dimensions, (16, 16, 1),
-    #         source_mapping.device_ptr(),
-    #         dest_mapping.device_ptr())
-
-    shape = width * height * 4
-
-    # get external memory for numba.cuda
-    source_ptr = ExternalMemory(source_mapping.device_ptr(), shape)
-    dest_ptr = ExternalMemory(dest_mapping.device_ptr(), shape)
-
-    # make them a device arrays
-    source_array = nbcuda.devicearray.DeviceNDArray(shape=shape, strides=(1,),
-                                                    dtype=numpy.dtype('uint8'),
-                                                    gpu_data=source_ptr)
-
-    dest_array = nbcuda.devicearray.DeviceNDArray(shape=shape, strides=(1,),
-                                                  dtype=numpy.dtype('uint8'),
-                                                  gpu_data=dest_ptr)
-
-    # call our kernel
-    invert[grid_dimensions, (16, 16)](source_array, dest_array)
+    invert.prepared_call(grid_dimensions, (16, 16, 1),
+                         source_mapping.device_ptr(),
+                         dest_mapping.device_ptr())
 
     cuda_driver.Context.synchronize()
 
@@ -222,7 +177,7 @@ def process_image():
     pycuda_source_pbo.unregister()
 
     # activate destination buffer
-    glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, long(source_pbo))
+    glBindBufferARB(GL_PIXEL_PACK_BUFFER_ARB, int(source_pbo))
 
     # read data into pbo. note: use BGRA format for optimal performance
     glReadPixels(
@@ -234,13 +189,13 @@ def process_image():
         GL_UNSIGNED_BYTE,  # output type
         ctypes.c_void_p(0))
 
-    pycuda_source_pbo = cuda_gl.BufferObject(long(source_pbo))
+    pycuda_source_pbo = cuda_gl.BufferObject(int(source_pbo))
 
     # run the Cuda kernel
     process(image_width, image_height)
     # blit convolved texture onto the screen
     # download texture from PBO
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, long(dest_pbo))
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, int(dest_pbo))
     glBindTexture(GL_TEXTURE_2D, output_texture)
 
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
@@ -250,7 +205,6 @@ def process_image():
 
 def display_image():
     """ render a screen sized quad """
-
     glDisable(GL_DEPTH_TEST)
     glDisable(GL_LIGHTING)
     glEnable(GL_TEXTURE_2D)
@@ -319,36 +273,23 @@ def main():
     cuda_gl = pycuda.gl
     cuda_driver = pycuda.driver
 
-    # cuda_module = SourceModule("""
-    # __global__ void invert(unsigned char *source, unsigned char *dest)
-    # {
-    #   int block_num        = blockIdx.x + blockIdx.y * gridDim.x;
-    #   int thread_num       = threadIdx.y * blockDim.x + threadIdx.x;
-    #   int threads_in_block = blockDim.x * blockDim.y;
-    #   //Since the image is RGBA we multiply the index 4.
-    #   //We'll only use the first 3 (RGB) channels though
-    #   int idx              = 4 * (threads_in_block * block_num + thread_num);
-    #   dest[idx  ] = 255 - source[idx  ];
-    #   dest[idx+1] = 255 - source[idx+1];
-    #   dest[idx+2] = 255 - source[idx+2];
-    # }
-    # """)
-    # invert = cuda_module.get_function("invert")
-    # # The argument "PP" indicates that the invert function will take two PBOs as arguments
-    # invert.prepare("PP")
-
-    # force compilation here
-    @nbcuda.jit("(uint8[::1], uint8[::1])")
-    def invert(source, dest):
-        block_num = nbcuda.blockIdx.x + nbcuda.blockIdx.y * nbcuda.gridDim.x
-        thread_num = nbcuda.threadIdx.y * nbcuda.blockDim.x + nbcuda.threadIdx.x
-        threads_in_block = nbcuda.blockDim.x * nbcuda.blockDim.y
-        # Since the image is RGBA we multiply the index 4.
-        # We'll only use the first 3 (RGB) channels though
-        idx = 4 * (threads_in_block * block_num + thread_num)
-        dest[idx] = 255 - source[idx]
-        dest[idx + 1] = 255 - source[idx + 1]
-        dest[idx + 2] = 255 - source[idx + 2]
+    cuda_module = SourceModule("""
+    __global__ void invert(unsigned char *source, unsigned char *dest)
+    {
+      int block_num        = blockIdx.x + blockIdx.y * gridDim.x;
+      int thread_num       = threadIdx.y * blockDim.x + threadIdx.x;
+      int threads_in_block = blockDim.x * blockDim.y;
+      //Since the image is RGBA we multiply the index 4.
+      //We'll only use the first 3 (RGB) channels though
+      int idx              = 4 * (threads_in_block * block_num + thread_num);
+      dest[idx  ] = 255 - source[idx  ];
+      dest[idx+1] = 255 - source[idx+1];
+      dest[idx+2] = 255 - source[idx+2];
+    }
+    """)
+    invert = cuda_module.get_function("invert")
+    # The argument "PP" indicates that the invert function will take two PBOs as arguments
+    invert.prepare("PP")
 
     # create source and destination pixel buffer objects for processing
     create_PBOs(*initial_size)
