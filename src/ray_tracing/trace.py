@@ -1,11 +1,11 @@
 from numba import cuda
-from .intersections import intersect_ray_sphere, intersect_ray_plane
+from .intersections import intersect_ray_sphere, intersect_ray_plane, intersect_ray_triangle
 from .common import get_sphere_color, get_plane_color, get_sphere_normal, get_plane_normal, get_vector_to_light, \
-    get_reflection, dot, linear_comb
+    get_reflection, dot, linear_comb, get_triangle_vertex_data, get_triangle_color, get_triangle_normal
 
 
 @cuda.jit(device=True)
-def get_intersection(ray_origin: tuple, ray_dir: tuple, spheres, planes) -> (float, int, int):
+def get_intersection(ray_origin: tuple, ray_dir: tuple, spheres, planes, triangles) -> (float, int, int):
 
     """ Cast a single ray from ray_origin and check whether it hits something.
 
@@ -38,11 +38,23 @@ def get_intersection(ray_origin: tuple, ray_dir: tuple, spheres, planes) -> (flo
             obj_index = idx
             obj_type = 1
 
+    # Loop through all triangles:
+    for idx in range(triangles.shape[1]):
+
+        vertices = get_triangle_vertex_data(triangles[0:9, idx])
+        dist = intersect_ray_triangle(ray_origin, ray_dir, vertices)
+
+        # If it hits the plane and dist is closer than the closest one:
+        if intersect_dist > dist > 0:
+            intersect_dist = dist
+            obj_index = idx
+            obj_type = 2
+
     return intersect_dist, obj_index, obj_type
 
 
 @cuda.jit(func_or_sig=None, device=True)
-def trace(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_int: float, lambert_int: float) -> (tuple, tuple, tuple):
+def trace(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, triangles, ambient_int: float, lambert_int: float) -> (tuple, tuple, tuple):
 
     """ Trace the ray and return the (R, G, B) values, the point of contact P and reflection direction R. """
 
@@ -50,7 +62,7 @@ def trace(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_in
     RGB = (0.0, 0.0, 0.0)
 
     # >>> 1) Check whether the ray hits any of the spheres or planes:
-    intersect_dist, obj_index, obj_type = get_intersection(ray_origin, ray_dir, spheres, planes)
+    intersect_dist, obj_index, obj_type = get_intersection(ray_origin, ray_dir, spheres, planes, triangles)
 
     # If no intersection: return
     if obj_type == 404:
@@ -69,6 +81,11 @@ def trace(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_in
 
         RGB_obj = get_plane_color(obj_index, planes)
         N = get_plane_normal(obj_index, planes)
+
+    elif obj_type == 2:         # (if it's a triangle)
+
+        RGB_obj = get_triangle_color(obj_index, triangles)
+        N = get_triangle_normal(obj_index, triangles)
 
     else:                       # (if ray does not intersect)
         return (0., 0., 0.), (404., 404., 404.), (404, 404., 404.)
@@ -89,7 +106,7 @@ def trace(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_in
         L = get_vector_to_light(P, lights, light_index)
 
         # If there is a line of sight to the light source, do the lambert shading:
-        _, _, obj_type = get_intersection(P, L, spheres, planes)
+        _, _, obj_type = get_intersection(P, L, spheres, planes, triangles)
 
         # If there is an object in the way -> skip Lambert shading
         if obj_type != 404:
@@ -113,11 +130,11 @@ def trace(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_in
 
 
 @cuda.jit(device=True)
-def sample(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_int, lambert_int,
+def sample(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, triangles, ambient_int, lambert_int,
            reflection_int, refl_depth) -> (tuple, tuple, tuple):
 
     # Run the tracing for this pixel to get R, G, B values
-    RGB, POINT, REFLECTION_DIR = trace(ray_origin, ray_dir, spheres, lights, planes, ambient_int, lambert_int)
+    RGB, POINT, REFLECTION_DIR = trace(ray_origin, ray_dir, spheres, lights, planes, triangles, ambient_int, lambert_int)
 
     # Run the reflection "depth" amount of times:
     for i in range(refl_depth):
@@ -125,7 +142,7 @@ def sample(ray_origin: tuple, ray_dir: tuple, spheres, lights, planes, ambient_i
                 (REFLECTION_DIR[0] == 404. and REFLECTION_DIR[1] == 404. and REFLECTION_DIR[2] == 404.):
             continue
 
-        RGB_refl, POINT, REFLECTION_DIR = trace(POINT, REFLECTION_DIR, spheres, lights, planes, ambient_int, lambert_int)
+        RGB_refl, POINT, REFLECTION_DIR = trace(POINT, REFLECTION_DIR, spheres, lights, planes, triangles, ambient_int, lambert_int)
 
         # Reflections power loss:
         RGB = linear_comb(RGB, RGB_refl, 1.0, reflection_int ** (i + 1))

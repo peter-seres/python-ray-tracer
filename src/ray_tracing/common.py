@@ -8,6 +8,16 @@ def to_tuple3(array):
 
 
 @cuda.jit(device=True)
+def cross(a, b):
+
+    c = (a[1] * b[2] - a[2] * b[1],
+         a[2] * b[0] - a[0] * b[2],
+         a[0] * b[1] - a[1] * b[0])
+
+    return c
+
+
+@cuda.jit(device=True)
 def linear_comb(a, b, c1, c2):
     """ returns p = c1 * a + c2 * b for 3D vectors """
 
@@ -121,3 +131,35 @@ def get_reflection(ray_dir, normal):
     R = linear_comb(ray_dir, normal, 1.0, -2.0 * D_dot_N)
 
     return normalize(R)
+
+
+@cuda.jit(device=True)
+def get_triangle_vertex_data(array):
+
+    V0 = to_tuple3(array[0:3])
+    V1 = to_tuple3(array[3:6])
+    V2 = to_tuple3(array[6:9])
+
+    return (V0, V1, V2)
+
+
+@cuda.jit(device=True)
+def get_triangle_color(index, triangles):
+    """ Returns the color tuple of a triangle."""
+
+    (R, G, B) = triangles[9:12, index]
+
+    return (R, G, B)
+
+
+@cuda.jit(device=True)
+def get_triangle_normal(index, triangles):
+    """ Returns the normal unit vector of a triangle."""
+
+    (V0, V1, V2) = get_triangle_vertex_data(triangles[0:9, index])
+    a = vector_difference(V0, V1)
+    b = vector_difference(V0, V2)
+    n = cross(a, b)
+    N = normalize(n)
+
+    return N

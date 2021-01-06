@@ -1,6 +1,6 @@
 from numba import cuda
 from math import sqrt
-from .common import normalize, dot, vector_difference
+from .common import normalize, dot, vector_difference, cross, linear_comb
 
 
 @cuda.jit(device=True)
@@ -63,6 +63,60 @@ def intersect_ray_plane(ray_origin: tuple, ray_dir: tuple, plane_origin: tuple, 
     dist = nominator / denom
 
     if dist > 0:
+        return dist
+    else:
+        return -999.0
+
+
+@cuda.jit(device=True)
+def intersect_ray_triangle(ray_origin, ray_dir, vertices) -> float:
+
+    P = ray_origin
+    D = ray_dir
+
+    # Triangle is defined using 3 vertex positions:
+    (V0, V1, V2) = vertices
+
+    # Triangle normal unit vector:
+    a = vector_difference(V0, V1)
+    b = vector_difference(V0, V2)
+    n = cross(a, b)
+    N = normalize(n)
+
+    # Dot product between N and any point in the plane:
+    ND = dot(N, vector_difference(P, V1))
+
+    # Dot product of ray direction and normal vector
+    denom = dot(D, N)
+
+    # Threshold for parallel planes:
+    EPS = 0.001
+    if abs(denom) < EPS:
+        return -999.9
+
+    # Distance to the ray-plane intersection:
+    dist = (ND - dot(P, N)) / denom
+
+    # If it's negative the intersection is behind us:
+    if dist <= 0:
+        return -999.9
+
+    point = linear_comb(P, D, 1.0, dist)
+
+    # Find if it's within the triangle:
+    edge_0 = vector_difference(V0, V1)
+    edge_1 = vector_difference(V1, V2)
+    edge_2 = vector_difference(V2, V0)
+
+    C0 = vector_difference(V0, point)
+    C1 = vector_difference(V1, point)
+    C2 = vector_difference(V2, point)
+
+    inside_0 = dot(N, cross(edge_0, C0)) > 0
+    inside_1 = dot(N, cross(edge_1, C1)) > 0
+    inside_2 = dot(N, cross(edge_2, C2)) > 0
+
+    if (inside_0 and inside_1 and inside_2):
         return dist
     else:
         return -999.0

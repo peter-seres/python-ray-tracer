@@ -1,10 +1,10 @@
 from numba import cuda
 from .trace import sample
-from .common import matmul, normalize, linear_comb, to_tuple3, clip_color_vector
+from .common import matmul, normalize, linear_comb, clip_color_vector
 
 
 @cuda.jit
-def render(pixel_loc, result, camera_origin, camera_rotation, spheres, lights, planes, amb, lamb, refl, refl_depth, aliasing):
+def render(pixel_loc, result, camera_origin, camera_rotation, spheres, lights, planes, triangles, amb, lamb, refl, refl_depth, aliasing):
     R = camera_rotation
     (R0, R1, R2) = R[0, :], R[1, :], R[2, :]
     x, y = cuda.grid(2)
@@ -23,7 +23,7 @@ def render(pixel_loc, result, camera_origin, camera_rotation, spheres, lights, p
         ray_dir = normalize(ray_dir)
 
         # Primary Sample:
-        (R, G, B) = sample(ray_origin, ray_dir, spheres, lights, planes, amb, lamb, refl, refl_depth)
+        (R, G, B) = sample(ray_origin, ray_dir, spheres, lights, planes, triangles, amb, lamb, refl, refl_depth)
 
         # Take extra samples except on the edges
         if aliasing and x+1 <= pixel_loc.shape[1] and x-1 >= 0 and y+1 <= pixel_loc.shape[2] and y-1 >= 0:
@@ -53,7 +53,7 @@ def render(pixel_loc, result, camera_origin, camera_rotation, spheres, lights, p
             for P in [P_left, P_right, P_top, P_bot, P_topleft, P_topright, P_bottomleft, P_bottomright]:
                 ray_dir = matmul((R0, R1, R2), P)
                 ray_dir = normalize(ray_dir)
-                (R_s, G_s, B_s) = sample(ray_origin, ray_dir, spheres, lights, planes, amb, lamb, refl, refl_depth)
+                (R_s, G_s, B_s) = sample(ray_origin, ray_dir, spheres, lights, planes, triangles, amb, lamb, refl, refl_depth)
 
                 R += R_s
                 G += B_s

@@ -1,27 +1,29 @@
 import numpy as np
 from numba import cuda
 from ray_tracing import render
-from scene import Scene, Camera
+from scene import Camera
 from viewer import convert_array_to_image
+from scene.scene_setups import default_scene, triangle_test_scene
 
 
 def main():
     # 1) Render and shader settings:
-    w, h = 1000, 1000
-    amb, lamb, refl, refl_depth = 0.0, 0.6, 0.3, 2
-    aliasing = True
+    w, h = 300, 300
+    amb, lamb, refl, refl_depth = 0.2, 0.6, 0.3, 1
+    aliasing = False
 
     # 2) Generate scene:
-    scene = Scene.default_scene()
-    spheres_host, light_host, planes_host = scene.generate_scene()
+    scene = triangle_test_scene()
+    spheres_host, light_host, planes_host, triangles_host = scene.generate_scene()
 
     # Send the data arrays to GPU memory:
     spheres = cuda.to_device(spheres_host)
     lights = cuda.to_device(light_host)
     planes = cuda.to_device(planes_host)
+    triangles = cuda.to_device(triangles_host)
 
     # 3) Set up camera and rays
-    camera = Camera(resolution=(w, h), position=[-2, 0, 2.0], euler=[0, -30, 0])
+    camera = Camera(resolution=(w, h), position=[-4, 0, 2.0], euler=[0, -10, 0])
 
     # Send the camera data to GPU memory:
     camera_origin = cuda.to_device(camera.position)
@@ -38,19 +40,22 @@ def main():
     blockspergrid = (blockspergrid_x, blockspergrid_y)
 
     # 6) Call JIT compiled renderer:
+    print("startinng kernel")
     render[blockspergrid, threadsperblock](pixel_loc, result, camera_origin, camera_rotation,
-                                           spheres, lights, planes, amb, lamb, refl, refl_depth, aliasing)
+                                           spheres, lights, planes, triangles, amb, lamb, refl, refl_depth, aliasing)
 
-    import time
-    st = time.time()
-    render[blockspergrid, threadsperblock](pixel_loc, result, camera_origin, camera_rotation,
-                                           spheres, lights, planes, amb, lamb, refl, refl_depth+2, aliasing)
-    et = time.time()
-    print(f"time: {1000 * (et - st):,.1f} ms")
+    # import time
+    # st = time.time()
+    # render[blockspergrid, threadsperblock](pixel_loc, result, camera_origin, camera_rotation,
+    #                                        spheres, lights, planes, amb, lamb, refl, refl_depth+2, aliasing)
+    # et = time.time()
+    # print(f"time: {1000 * (et - st):,.1f} ms")
+
     # 7) Present the result as a .png
+    print("render done")
     result = result.copy_to_host()
     image = convert_array_to_image(result)
-    image.save('../output/test_sampled_highres_utlra_aliasing_testing.png')
+    image.save('../output/test_triangle.png')
 
     return 0
 
