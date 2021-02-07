@@ -23,7 +23,7 @@ def main():
     triangles = cuda.to_device(triangles_host)
 
     # 3) Set up camera and rays
-    camera = Camera(resolution=(w, h), position=[-4, 0, 2.0], euler=[0, -10, 0])
+    camera = Camera(resolution=(w, h), position=[-7, 0, 5.0], euler=[0, -15, 0])
 
     # Send the camera data to GPU memory:
     camera_origin = cuda.to_device(camera.position)
