@@ -1,6 +1,6 @@
 from numba import cuda
 from .trace import sample
-from .common import matmul, normalize, linear_comb, to_tuple3, clip_color_vector
+from .common import matmul, normalize, linear_comb, clip_color_vector
 
 
 @cuda.jit

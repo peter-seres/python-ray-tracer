@@ -2,7 +2,7 @@ from __future__ import annotations
 import numpy as np
 from dataclasses import dataclass
 from typing import List
-from .colors import *
+from .colors import RED, BLUE, MAGENTA, YELLOW, GREEN, GREY
 from .common import Vector3D, Color
 
 
@@ -55,6 +55,13 @@ class Plane:
 
 class Scene:
     def __init__(self, lights: List[Light], spheres: List[Sphere], planes: List[Plane]):
+        """
+        Scene definition. The objects within the scene are abstracted to numpy arrays and sent to GPU memory.
+
+        :param lights: a list of Light objects
+        :param spheres: a list of Sphere objects
+        :param planes: a list of Plane objects
+        """
         self.lights = lights
         self.spheres = spheres
         self.planes = planes
